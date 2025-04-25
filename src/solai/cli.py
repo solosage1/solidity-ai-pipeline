@@ -1,7 +1,7 @@
 from pathlib import Path
 import shutil, subprocess, platform, importlib.resources as pkg
 import typer
-from solai.runner import run_backlog, doctor
+from solai.runner import run_backlog, doctor as run_doctor
 
 app = typer.Typer(help="ℹ  Solidity AI pipeline CLI")
 
@@ -19,6 +19,16 @@ def init(update: bool = typer.Option(False, "-u", "--update",
             continue
         shutil.copy(tdir / tmpl, tgt)
         typer.echo(f"✓ {tgt.relative_to(root)} written")
+    
+    # Handle gitignore snippet
+    gitignore = root / ".gitignore"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if "# >>> solai" not in content:
+            with open(gitignore, "a") as f:
+                f.write("\n" + (root / ".gitignore_snip.txt").read_text())
+            typer.echo("✓ .gitignore updated with solai patterns")
+    
     typer.echo("✅  Run `make bootstrap-solai`")
 
 # ----- run ---------------------------------------------------
@@ -33,7 +43,7 @@ def run(config: Path = Path(".solai.yaml"),
 @app.command()
 def doctor():
     """Environment self-test."""
-    doctor()
+    run_doctor()
 
 if __name__ == "__main__":
     app() 

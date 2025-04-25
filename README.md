@@ -23,4 +23,10 @@ make solai-run
 - Docker
 - Foundry
 - Slither
-- SWE-Agent and SWE-ReX 
+- SWE-Agent and SWE-ReX
+
+## Implementation Details
+
+For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
+
+- [Phase 1 Summary](specs/phase1_summary.md) 

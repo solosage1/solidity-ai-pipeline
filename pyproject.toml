@@ -8,14 +8,12 @@ version         = "0.4.0"
 description     = "Plug-and-play AI improvement pipeline for Solidity projects"
 readme          = "README.md"
 requires-python = ">=3.12"
-license         = {text = "BUSL-1.1"}
+license         = {text = "MIT"}
 authors         = [{name = "SoloLabs"}]
 dependencies    = [
   "typer>=0.12",
   "rich>=13",
-  "pyyaml>=6",
-  "sweagent>=1.0",
-  "swe-rex>=1.0"
+  "pyyaml>=6"
 ]
 
 [project.scripts]

@@ -1,4 +1,5 @@
 FROM ghcr.io/foundry-rs/foundry:latest
-RUN apt-get update && apt-get install -y slither-analyzer \
-    && pip install --no-cache-dir swe-rex
+USER root
+RUN apt-get update && apt-get install -y python3-pip \
+    && pip install --no-cache-dir slither-analyzer swe-rex
 ENV PATH="$PATH:/root/.local/bin" 

@@ -2,7 +2,7 @@ agent:
   model: gpt4o
   usd_cap: 5
 env:
-  docker_image: foundry_sol:0.4.0   # pinned tag
+  docker_image: foundry_sol:0.4.0
   post_startup_cmds: ["forge test -q"]
 backlog:
   file: backlog.yaml
