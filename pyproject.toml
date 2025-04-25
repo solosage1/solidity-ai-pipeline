@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "solai"
+version         = "0.4.0"
+description     = "Plug-and-play AI improvement pipeline for Solidity projects"
+readme          = "README.md"
+requires-python = ">=3.12"
+license         = {text = "BUSL-1.1"}
+authors         = [{name = "SoloLabs"}]
+dependencies    = [
+  "typer>=0.12",
+  "rich>=13",
+  "pyyaml>=6",
+  "sweagent>=1.0",
+  "swe-rex>=1.0"
+]
+
+[project.scripts]
+solai = "solai.cli:app"
+
+[tool.hatch.build]
+packages = ["src/solai"] 

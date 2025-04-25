@@ -1,0 +1,4 @@
+# >>> solai
+.solai/worktrees/
+.solai/logs/
+# <<< solai 
