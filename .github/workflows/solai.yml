@@ -43,55 +43,36 @@ jobs:
       - name: Install Foundry
         run: |
           # 1) Create Foundry directories
-          mkdir -p "$HOME/.foundry/bin"
+          #    Note: Binaries actually land in $HOME/.config/.foundry/bin with this setup
+          mkdir -p "$HOME/.foundry/bin" 
           mkdir -p "$HOME/.config/.foundry/bin"
 
-          # 2) Download foundryup installer directly to the bin directory
+          # 2) Download foundryup installer directly to the (unused) bin directory
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
           
           # 3) Make it executable
           chmod +x "$HOME/.foundry/bin/foundryup"
 
-          # 4) Add foundry bin to PATH for this step
+          # 4) Add the foundryup script's dir to PATH *for this step only* 
           export PATH="$HOME/.foundry/bin:$PATH"
 
-          # 5) Run foundryup to install the full suite and capture exit code
-          "$HOME/.foundry/bin/foundryup" || echo "foundryup command failed with exit code $?"
+          # 5) Run foundryup to install the full suite
+          foundryup || echo "foundryup command failed with exit code $?"
 
-          # 6) Debug: Search for the actual forge binary location
-          echo "--- Searching for forge binary recursively in ~/.foundry ---"
-          find "$HOME/.foundry" -name forge -type f -ls
-          echo "--- End search ---"
+          # 6) Verify binary exists in the expected location
+          echo "--- Verifying forge install location ---"
+          ls -la "$HOME/.config/.foundry/bin/forge"
+          echo "--- End verification ---"
 
-          # 7) Debug: Show installation results (original step 6)
-          echo "Contents of ~/.foundry/bin:"
-          ls -la "$HOME/.foundry/bin"
-          
-          # 8) Debug: Show contents of ~/.local/bin (original step 7)
-          echo "Contents of ~/.local/bin:"
-          ls -la "$HOME/.local/bin" || true
-          
-          # 9) Debug: Find forge binary (original step 7, less reliable now)
-          # echo "Looking for forge binary:"
-          # find "$HOME" -name forge -type f 2>/dev/null || true 
-          
-          # 10) Update PATH to include all possible Foundry locations (original step 8)
-          export PATH="$HOME/.foundry/bin:$HOME/.local/bin:$PATH"
-          
-          # 11) Verify the installation (original step 9)
-          echo "Current PATH: $PATH"
-          which forge || echo "forge not found in PATH"
-          forge --version || echo "forge command failed"
+          # 7) Persist the *correct* binary path for future steps
+          echo "Adding $HOME/.config/.foundry/bin to GITHUB_PATH"
+          echo "$HOME/.config/.foundry/bin" >> $GITHUB_PATH
 
-          # 12) Persist foundry paths in GITHUB_PATH for future steps (original step 10)
-          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # 13) Additional debug: Check if forge is in other common locations (original step 11)
-          echo "Checking other possible Foundry locations:"
-          ls -la /usr/local/bin/forge || echo "Not in /usr/local/bin"
-          ls -la "$HOME/.cargo/bin/forge" || echo "Not in ~/.cargo/bin"
-          ls -la "$HOME/.config/.foundry/bin/forge" || echo "Not in ~/.config/.foundry/bin"
+          # 8) Verify the installation using the correct path for this step
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
+          echo "Current PATH (in step): $PATH"
+          which forge
+          forge --version
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
@@ -112,7 +93,12 @@ jobs:
 
       # 6) Verify environment
       - name: solai doctor
-        run: solai doctor
+        run: |
+          echo "--- PATH check inside solai doctor step ---"
+          echo "PATH=$PATH"
+          which forge || echo "forge still not found by which in solai doctor step"
+          echo "--- End PATH check ---"
+          solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
