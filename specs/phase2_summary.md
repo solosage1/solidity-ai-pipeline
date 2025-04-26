@@ -20,18 +20,22 @@ The primary objective of Phase 2 was to move beyond the foundational package str
     - **`[ai]` Extra:** Introduced an optional dependency group `[ai]` to handle the AI backend installations. This extra includes:
         - `sweagent` (installed directly from the `princeton-nlp/SWE-agent` GitHub repository).
         - `swe-rex` (installed directly from the `SWE-agent/SWE-ReX` GitHub repository).
+- **Build Configuration:**
+    - Added `only-packages = true` to ensure proper package building
+    - Configured wheel target to include `src/solai` package
+    - Properly handles src-layout Python package structure
 - **Metadata:** Added `allow-direct-references = true` under `[tool.hatch.metadata]` to support the direct Git dependencies.
 
 ## 4. Installation and Bootstrapping (`README.md`, `Makefile.inc`)
 
 - **Installation Process:** The recommended installation method was updated for reliability:
-    1. Install the core package using `pipx install solai --include-deps`.
-    2. Use `make bootstrap-solai` to:
+    1. Install the wheel directly with its AI extras using `pip install dist/solai-*.whl[ai]`
+    2. For development, use `pip install -e .[ai]`
+    3. Use `make bootstrap-solai` to:
         - Ensure pipx is on PATH
         - Install/upgrade solai if needed
-        - Inject SWE-Agent & SWE-ReX into the solai venv
         - Verify the environment with `solai doctor`
-- **`Makefile.inc` (`bootstrap-solai`):** The `bootstrap-solai` target was updated to handle the complete installation process, including environment verification and AI backend injection.
+- **`Makefile.inc` (`bootstrap-solai`):** The `bootstrap-solai` target was updated to handle the complete installation process, including environment verification.
 
 ## 5. Configuration (`.solai.yaml` Template)
 
@@ -132,17 +136,14 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
         - Builds the `solai` wheel (`python -m build`).
     - **Package Installation & Verification:**
         - Uses shell expansion to locate the built wheel file.
-        - Installs the base wheel using `pipx install --include-deps`.
-        - Uses `make bootstrap-solai` to:
-            - Ensure pipx is on PATH
-            - Install/upgrade solai
-            - Inject AI dependencies (SWE-Agent/ReX)
-            - Verify the environment
+        - Installs the wheel with its AI extras using `pip install "${wheel}[ai]"`
+        - Installs Foundry using the official installer
+        - Verifies the environment with `solai doctor`
     - **Smoke Test:**
         - Creates a temporary directory and initializes a git repo.
         - Adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`).
         - Runs `solai init` to set up project configuration.
-        - Uses `make bootstrap-solai` again in the test directory to ensure AI dependencies.
+        - Uses `make bootstrap-solai` in the test directory.
         - Tests the core workflow with `solai run --once --max-concurrency 1`.
 
 ## 10. Development Environment Setup (`bootstrap/`)

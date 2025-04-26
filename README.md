@@ -4,19 +4,30 @@ Plug-and-play AI improvement pipeline for Solidity projects.
 
 ## Installation
 
+From PyPI (coming soon):
 ```bash
-# 1) install core CLI
-pipx install solai --include-deps
+pip install solai[ai]
+```
 
-# 2) inject the latest AI backends into that same solai venv
+From source:
+```bash
+# Clone the repository
+git clone https://github.com/solosage1/solidity-ai-pipeline.git
+cd solidity-ai-pipeline
+
+# Build and install
+python -m pip install build
+python -m build
+pip install dist/solai-*.whl[ai]
+
+# Verify installation
 make bootstrap-solai
 ```
 
 The `bootstrap-solai` make target will:
-1. Ensure pipx is on your PATH
-2. Install/upgrade solai if needed
-3. Inject SWE-Agent & SWE-ReX into the solai venv
-4. Verify the environment with `solai doctor`
+1. Verify the environment with `solai doctor`
+2. Ensure all dependencies are properly installed
+3. Set up any necessary local development tools
 
 ## SWE-ReX Authentication
 
@@ -32,20 +43,21 @@ The SWE-ReX service uses API key authentication. When making requests to the ser
 ## Quick Start
 
 ```bash
-# In your Solidity project directory (after installing solai & AI deps):
+# In your Solidity project directory:
 solai init
 make bootstrap-solai
-make solai-run
+solai run --once  # Run once and exit
+solai run         # Run continuously (default)
 ```
 
 ## Requirements
 
 - Python 3.12+
 - Docker
-- Foundry
+- Foundry (installed automatically in CI, manual install needed locally)
 - Slither
-- SWE-ReX (automatically installed with solai)
-- SWE-Agent (requires manual installation from source, see above)
+- SWE-ReX (installed automatically with solai[ai])
+- SWE-Agent (installed automatically with solai[ai])
 
 ## Environment Notes
 
