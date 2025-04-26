@@ -15,6 +15,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Debug: Initial PATH state
+      - name: Debug - Initial PATH
+        run: |
+          echo "Initial PATH: $PATH"
+          echo "GITHUB_PATH content:"
+          cat $GITHUB_PATH || echo "GITHUB_PATH not found"
+
       # 3) Install build tool + build your wheel
       - name: Install build tooling
         run: |
@@ -59,6 +66,21 @@ jobs:
           
           # Add to GitHub path for subsequent steps
           echo "/home/runner/.foundry/bin" >> $GITHUB_PATH
+          
+          # Debug: Verify Foundry installation
+          echo "PATH after Foundry install: $PATH"
+          echo "Testing forge directly:"
+          /home/runner/.foundry/bin/forge --version
+
+      # Debug: PATH after Foundry install
+      - name: Debug - Post Foundry PATH
+        run: |
+          echo "PATH after Foundry setup: $PATH"
+          echo "GITHUB_PATH content:"
+          cat $GITHUB_PATH
+          echo "Trying to locate forge:"
+          which forge || echo "forge not found in PATH"
+          ls -l /home/runner/.foundry/bin/
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
@@ -67,9 +89,23 @@ jobs:
       - name: Set up Docker Buildx (brings in Docker CLI & daemon)
         uses: docker/setup-buildx-action@v3
 
-      # 6) Verify environment (uses whatever PATH was assembled via $GITHUB_PATH)
+      # Debug: PATH after Docker setup
+      - name: Debug - Post Docker PATH
+        run: |
+          echo "PATH after Docker setup: $PATH"
+          echo "GITHUB_PATH content:"
+          cat $GITHUB_PATH
+          echo "Trying to locate forge:"
+          which forge || echo "forge not found in PATH"
+
+      # 6) Verify environment with explicit PATH
       - name: solai doctor
-        run: solai doctor
+        env:
+          PATH: "/home/runner/.foundry/bin:$PATH"
+        run: |
+          echo "PATH in solai doctor step: $PATH"
+          which forge || echo "forge not found in PATH"
+          solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
