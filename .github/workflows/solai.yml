@@ -39,6 +39,10 @@ jobs:
           python -m pip install "${wheel}[ai]"
           python -m pip install pipx
 
+      # 4a) Install Slither
+      - name: Install Slither
+        run: python -m pip install slither-analyzer
+
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
