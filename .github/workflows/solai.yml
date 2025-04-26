@@ -53,6 +53,10 @@ jobs:
           # Now run foundryup to install Foundry
           /home/runner/.foundry/bin/foundryup
           
+          # Debug: show installed Foundry binaries
+          echo "🔍 Foundry bin contents:"
+          ls -l /home/runner/.foundry/bin
+          
           # Add to GitHub path for subsequent steps
           echo "/home/runner/.foundry/bin" >> $GITHUB_PATH
 
@@ -63,9 +67,16 @@ jobs:
       - name: Set up Docker Buildx (brings in Docker CLI & daemon)
         uses: docker/setup-buildx-action@v3
 
-      # 6) Verify environment
+      # 6) Verify environment: ensure Foundry and Docker are both in PATH
       - name: solai doctor
-        run: solai doctor
+        env:
+          # re-prepend Foundry install dir to PATH (preserves all existing entries)
+          PATH: "/home/runner/.foundry/bin:${{ env.PATH }}"
+        run: |
+          echo "🔍 DEBUG PATH: $PATH"
+          which forge || true
+          forge --version || true
+          solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
