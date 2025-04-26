@@ -34,9 +34,22 @@ jobs:
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
+          # Download and execute foundryup installer
           curl -L https://foundry.paradigm.xyz | bash
-          source /home/runner/.bashrc
+          
+          # Add foundry binary path to PATH
+          export PATH="$PATH:$HOME/.foundry/bin"
+          
+          # Download foundryup binary directly
+          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o /home/runner/.foundry/bin/foundryup
+          
+          # Make it executable
+          chmod +x /home/runner/.foundry/bin/foundryup
+          
+          # Now run foundryup to install Foundry
           /home/runner/.foundry/bin/foundryup
+          
+          # Add to GitHub path for subsequent steps
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Verify environment
