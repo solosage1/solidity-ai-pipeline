@@ -1,0 +1,41 @@
+name: solai-phase2
+on: push
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ensure Python and build tools are available
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build hatchling
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      
+      - name: Build wheel
+        run: python -m build
+      
+      - name: Install solai
+        run: pipx install --include-deps 'dist/solai-*.whl[ai]'
+      
+      - name: Smoke test
+        run: |
+          mkdir smoke && cd smoke
+          git init .
+          echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
+          cat > Y.t.sol << 'EOF'
+          pragma solidity ^0.8.26; import "forge-std/Test.sol"; contract T is Test {
+            function testFail() public { assertTrue(false); }
+          }
+          EOF
+          solai init
+          make bootstrap-solai
+          solai run --once --max-concurrency 1 
