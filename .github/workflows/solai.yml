@@ -41,7 +41,7 @@ jobs:
           curl -L https://foundry.paradigm.xyz | bash
           
           # Add foundry binary path to PATH
-          export PATH="$PATH:$HOME/.foundry/bin"
+          export PATH="/home/runner/.foundry/bin:$PATH"
           
           # Download foundryup binary directly
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o /home/runner/.foundry/bin/foundryup
@@ -53,10 +53,12 @@ jobs:
           /home/runner/.foundry/bin/foundryup
           
           # Add to GitHub path for subsequent steps
-          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+          echo "/home/runner/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Verify environment
       - name: solai doctor
+        env:
+          PATH: "/home/runner/.foundry/bin:${{ env.PATH }}"
         run: solai doctor
 
       # 6) Full end-to-end smoke test
