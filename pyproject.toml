@@ -19,7 +19,7 @@ dependencies    = [
 
 [tool.hatch.build]
 # Tell Hatchling that our code lives under `src/`
-package-dir = { "" = "src" }
+package-dir = { "solai" = "src/solai" }
 # And include exactly the `solai` package
 packages    = ["solai"]
 
