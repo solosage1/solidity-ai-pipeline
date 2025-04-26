@@ -65,8 +65,6 @@ jobs:
 
       # 6) Verify environment
       - name: solai doctor
-        env:
-          PATH: "/home/runner/.foundry/bin:${{ env.PATH }}"
         run: solai doctor
 
       # 7) Full end-to-end smoke test
