@@ -29,14 +29,15 @@ jobs:
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
           python -m pip install --upgrade pip
+          python -m pip install "${wheel}[ai]"
 
-          # 4a) Install the solai package itself
-          python -m pip install "$wheel"
-
-          # 4b) Manually pull in SWE-Agent & SWE-ReX into the same env
-          python -m pip install \
-            git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent \
-            git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex
+      # 4b) Install Foundry
+      - name: Install Foundry
+        run: |
+          curl -L https://foundry.paradigm.xyz | bash
+          export PATH="$PATH:$HOME/.foundry/bin"
+          foundryup
+          echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Verify environment
       - name: solai doctor
