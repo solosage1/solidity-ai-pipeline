@@ -58,17 +58,28 @@ jobs:
           # 5) Run foundryup to install the full suite
           "$HOME/.foundry/bin/foundryup"
 
-          # 6) Update PATH to include the newly installed binaries
-          export PATH="$HOME/.foundry/bin:$PATH"
-          source "$HOME/.bashrc" || true  # Source bashrc if it exists
+          # 6) Debug: Show installation results
+          echo "Contents of ~/.foundry/bin:"
+          ls -la "$HOME/.foundry/bin"
           
-          # 7) Verify the installation
-          ls -l "$HOME/.foundry/bin"
-          which forge
-          forge --version
+          echo "Contents of ~/.local/bin:"
+          ls -la "$HOME/.local/bin" || true
+          
+          # 7) Find forge binary
+          echo "Looking for forge binary:"
+          find "$HOME" -name forge -type f 2>/dev/null || true
+          
+          # 8) Update PATH to include all possible Foundry locations
+          export PATH="$HOME/.foundry/bin:$HOME/.local/bin:$PATH"
+          
+          # 9) Verify the installation
+          echo "Current PATH: $PATH"
+          which forge || echo "forge not found in PATH"
+          forge --version || echo "forge command failed"
 
-          # 8) Persist foundry bin directory in GITHUB_PATH for future steps
+          # 10) Persist foundry paths in GITHUB_PATH for future steps
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
