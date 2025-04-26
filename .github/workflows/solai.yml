@@ -118,8 +118,13 @@ jobs:
           }
           EOF
 
-          # init & bootstrap
+          # init
           solai init
+
+          # Create top-level Makefile to include the generated .inc
+          echo 'include Makefile.inc' > Makefile
+
+          # bootstrap
           make bootstrap-solai
 
           # Verify environment *after* init and bootstrap
