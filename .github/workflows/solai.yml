@@ -27,8 +27,8 @@ jobs:
           echo "Installing wheel: $wheel"
           pipx install --include-deps "$wheel"
 
-      - name: Verify environment
-        run: solai doctor
+      - name: Bootstrap solai & verify
+        run: make bootstrap-solai
 
       - name: Smoke test
         run: |

@@ -6,13 +6,17 @@ Plug-and-play AI improvement pipeline for Solidity projects.
 
 ```bash
 # 1) install core CLI
-pipx install solai[ai] --include-deps
+pipx install solai --include-deps
 
 # 2) inject the latest AI backends into that same solai venv
-pipx inject solai \
-  git+https://github.com/princeton-nlp/SWE-agent.git@main \
-  git+https://github.com/SWE-agent/SWE-ReX.git@main
+make bootstrap-solai
 ```
+
+The `bootstrap-solai` make target will:
+1. Ensure pipx is on your PATH
+2. Install/upgrade solai if needed
+3. Inject SWE-Agent & SWE-ReX into the solai venv
+4. Verify the environment with `solai doctor`
 
 ## SWE-ReX Authentication
 

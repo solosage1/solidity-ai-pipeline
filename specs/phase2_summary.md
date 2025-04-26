@@ -24,10 +24,14 @@ The primary objective of Phase 2 was to move beyond the foundational package str
 
 ## 4. Installation and Bootstrapping (`README.md`, `Makefile.inc`)
 
-- **Installation Process:** The recommended installation method was significantly updated:
-    1. Install the core package and its `[ai]` extras using `pipx install solai[ai] --include-deps`.
-    2. Use `pipx inject solai ...` to install/update the specific Git versions of `SWE-agent` and `SWE-ReX` into the `solai` `pipx` environment. This ensures the latest versions from the repositories are used.
-- **`Makefile.inc` (`bootstrap-solai`):** The `bootstrap-solai` target was updated to reflect the new `pipx install solai[ai]` and `pipx inject ...` commands. It now forces the injection of the AI backends on every run.
+- **Installation Process:** The recommended installation method was updated for reliability:
+    1. Install the core package using `pipx install solai --include-deps`.
+    2. Use `make bootstrap-solai` to:
+        - Ensure pipx is on PATH
+        - Install/upgrade solai if needed
+        - Inject SWE-Agent & SWE-ReX into the solai venv
+        - Verify the environment with `solai doctor`
+- **`Makefile.inc` (`bootstrap-solai`):** The `bootstrap-solai` target was updated to handle the complete installation process, including environment verification and AI backend injection.
 
 ## 5. Configuration (`.solai.yaml` Template)
 
@@ -126,17 +130,19 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
     - **Build Process:**
         - Installs the PEP 517 build frontend (`python -m pip install build`).
         - Builds the `solai` wheel (`python -m build`).
-    - **Package Installation:**
+    - **Package Installation & Verification:**
         - Uses shell expansion to locate the built wheel file.
-        - Installs the base wheel using `pipx install --include-deps "$wheel"`.
-        - AI dependencies (SWE-Agent/ReX) are later injected by the `bootstrap-solai` make target.
-    - **Environment Verification:**
-        - Runs `solai doctor` to verify the basic CLI installation.
+        - Installs the base wheel using `pipx install --include-deps`.
+        - Uses `make bootstrap-solai` to:
+            - Ensure pipx is on PATH
+            - Install/upgrade solai
+            - Inject AI dependencies (SWE-Agent/ReX)
+            - Verify the environment
     - **Smoke Test:**
         - Creates a temporary directory and initializes a git repo.
         - Adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`).
         - Runs `solai init` to set up project configuration.
-        - Uses `make bootstrap-solai` to inject AI dependencies.
+        - Uses `make bootstrap-solai` again in the test directory to ensure AI dependencies.
         - Tests the core workflow with `solai run --once --max-concurrency 1`.
 
 ## 10. Development Environment Setup (`bootstrap/`)
@@ -158,4 +164,4 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
 
 ## 13. Conclusion
 
-Phase 2 successfully implemented the core AI task execution pipeline. `solai` can now be configured to use SWE-Agent (via SWE-ReX) within a specified Docker environment to attempt automated fixes for issues like failing tests. Key additions include the `[ai]` extra dependencies, the `run_backlog` implementation, the `image-rebuild` command, updated `doctor` checks, CI smoke tests, and improved documentation/installation instructions. The project is now capable of performing its primary function, with further refinements and features planned for subsequent phases. 
+Phase 2 successfully implemented the core AI task execution pipeline. `solai` can now be configured to use SWE-Agent (via SWE-ReX) within a specified Docker environment to attempt automated fixes for issues like failing tests. Key additions include the streamlined installation process via `make bootstrap-solai`, the `run_backlog` implementation, the `image-rebuild` command, updated `doctor` checks, CI smoke tests, and improved documentation/installation instructions. The project is now capable of performing its primary function, with further refinements and features planned for subsequent phases. 
