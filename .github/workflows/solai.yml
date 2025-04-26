@@ -95,14 +95,14 @@ jobs:
           which forge || echo "forge not found in PATH"
           ls -l "${HOME}/.foundry/bin"
 
-      # 6) Verify environment
-      - name: solai doctor
-        run: |
-          echo "--- PATH check inside solai doctor step ---"
-          echo "PATH=$PATH"
-          which forge || echo "forge still not found by which in solai doctor step"
-          echo "--- End PATH check ---"
-          solai doctor
+      # 6) Verify environment (Remove this step, move doctor call into smoke test)
+      # - name: solai doctor
+      #  run: |
+      #    echo "--- PATH check inside solai doctor step ---"
+      #    echo "PATH=$PATH"
+      #    which forge || echo "forge still not found by which in solai doctor step"
+      #    echo "--- End PATH check ---"
+      #    solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
@@ -121,6 +121,11 @@ jobs:
           # init & bootstrap
           solai init
           make bootstrap-solai
+
+          # Verify environment *after* init and bootstrap
+          echo "--- Running solai doctor after init/bootstrap ---"
+          solai doctor
+          echo "--- solai doctor finished ---"
 
           # run once
           solai run --once --max-concurrency 1 
