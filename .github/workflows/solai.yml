@@ -30,6 +30,7 @@ jobs:
           echo "Installing wheel: $wheel"
           python -m pip install --upgrade pip
           python -m pip install "${wheel}[ai]"
+          python -m pip install pipx
 
       # 4b) Install Foundry
       - name: Install Foundry
