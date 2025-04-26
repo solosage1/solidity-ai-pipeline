@@ -42,15 +42,17 @@ jobs:
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
-          # Install Foundry via the official installer (this also installs forge, cast, etc.)
+          # 1) Download & install foundryup (the installer)
           curl -L https://foundry.paradigm.xyz | bash
 
-          # Ensure the Foundry binaries are on PATH for all subsequent steps
-          echo "${HOME}/.foundry/bin" >> $GITHUB_PATH
+          # 2) Add foundryup and its installed binaries to PATH for this step
+          export PATH="$HOME/.foundry/bin:$PATH"
 
-          # Debug - verify Foundry installation
-          ls -l "${HOME}/.foundry/bin"   # should list forge, cast, etc.
-          forge --version                 # should print the Foundry version
+          # 3) Invoke foundryup to download & install forge, cast, anvil, etc.
+          foundryup
+
+          # 4) Persist the Foundry bin directory for all later steps
+          echo "${HOME}/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
@@ -69,12 +71,9 @@ jobs:
           which forge || echo "forge not found in PATH"
           ls -l "${HOME}/.foundry/bin"
 
-      # 6) Verify environment with explicit PATH
+      # 6) Verify environment
       - name: solai doctor
-        run: |
-          echo "PATH in solai doctor step: $PATH"
-          which forge || echo "forge not found in PATH"
-          solai doctor
+        run: solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
