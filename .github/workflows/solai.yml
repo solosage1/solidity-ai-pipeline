@@ -42,45 +42,15 @@ jobs:
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
-          # Create foundry directories
-          mkdir -p /home/runner/.foundry/bin
-          
-          # Download and execute foundryup installer
+          # Install Foundry via the official installer (this also installs forge, cast, etc.)
           curl -L https://foundry.paradigm.xyz | bash
-          
-          # Add foundry binary path to PATH
-          export PATH="/home/runner/.foundry/bin:$PATH"
-          
-          # Download foundryup binary directly
-          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o /home/runner/.foundry/bin/foundryup
-          
-          # Make it executable
-          chmod +x /home/runner/.foundry/bin/foundryup
-          
-          # Now run foundryup to install Foundry
-          /home/runner/.foundry/bin/foundryup
-          
-          # Debug: show installed Foundry binaries
-          echo "🔍 Foundry bin contents:"
-          ls -l /home/runner/.foundry/bin
-          
-          # Add to GitHub path for subsequent steps
-          echo "/home/runner/.foundry/bin" >> $GITHUB_PATH
-          
-          # Debug: Verify Foundry installation
-          echo "PATH after Foundry install: $PATH"
-          echo "Testing forge directly:"
-          /home/runner/.foundry/bin/forge --version
 
-      # Debug: PATH after Foundry install
-      - name: Debug - Post Foundry PATH
-        run: |
-          echo "PATH after Foundry setup: $PATH"
-          echo "GITHUB_PATH content:"
-          cat $GITHUB_PATH
-          echo "Trying to locate forge:"
-          which forge || echo "forge not found in PATH"
-          ls -l /home/runner/.foundry/bin/
+          # Ensure the Foundry binaries are on PATH for all subsequent steps
+          echo "${HOME}/.foundry/bin" >> $GITHUB_PATH
+
+          # Debug - verify Foundry installation
+          ls -l "${HOME}/.foundry/bin"   # should list forge, cast, etc.
+          forge --version                 # should print the Foundry version
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
@@ -97,11 +67,10 @@ jobs:
           cat $GITHUB_PATH
           echo "Trying to locate forge:"
           which forge || echo "forge not found in PATH"
+          ls -l "${HOME}/.foundry/bin"
 
       # 6) Verify environment with explicit PATH
       - name: solai doctor
-        env:
-          PATH: "/home/runner/.foundry/bin:$PATH"
         run: |
           echo "PATH in solai doctor step: $PATH"
           which forge || echo "forge not found in PATH"
