@@ -15,19 +15,23 @@ From source:
 git clone https://github.com/solosage1/solidity-ai-pipeline.git
 cd solidity-ai-pipeline
 
-# Build and install
-python -m pip install build
+# Build the wheel
+python -m pip install --upgrade pip build
 python -m build
+
+# Install the wheel with AI dependencies
+# This installs solai, sweagent, and swe-rex
 pip install dist/solai-*.whl[ai]
 
-# Verify installation
+# Verify installation and environment
+# (This also runs `solai doctor`)
 make bootstrap-solai
 ```
 
 The `bootstrap-solai` make target will:
 1. Verify the environment with `solai doctor`
-2. Ensure all dependencies are properly installed
-3. Set up any necessary local development tools
+2. Ensure all dependencies are properly installed and accessible
+3. Set up any necessary local development tools (like checking pipx path)
 
 ## SWE-ReX Authentication
 
@@ -58,12 +62,15 @@ solai run         # Run continuously (default)
     ```bash
     # Local installation:
     curl -L https://foundry.paradigm.xyz | bash
-    source ~/.bashrc  # or restart your terminal
+    # Add foundry to your shell's PATH (e.g., in ~/.bashrc or ~/.zshrc)
+    # Example for bash/zsh: export PATH="$HOME/.foundry/bin:$PATH"
+    # Then run:
+    source ~/.bashrc # or ~/.zshrc or restart your terminal
     foundryup
     ```
-- Slither
-- SWE-ReX (installed automatically with solai[ai])
-- SWE-Agent (installed automatically with solai[ai])
+- Slither (installed automatically with `solai[ai]`)
+- SWE-ReX (installed automatically with `solai[ai]`)
+- SWE-Agent (installed automatically with `solai[ai]`)
 
 ## Environment Notes
 
@@ -81,4 +88,36 @@ Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
 For detailed summaries of the implementation phases, please refer to the documents in the specs directory:
 
 - [Phase 1 Summary (v0.4.0)](specs/phase1_summary.md)
-- [Phase 2 Summary (v0.4.2)](specs/phase2_summary.md) 
+- [Phase 2 Summary (v0.4.2)](specs/phase2_summary.md)
+
+### Running the Pipeline
+
+Once configured, start the pipeline:
+
+```bash
+# Run once and exit
+solai run --once --max-concurrency 1
+
+# Run continuously (default)
+solai run
+
+# Override the swe-rex binary location (if needed)
+export SWE_REX_BIN=/path/to/my/swe-rex
+solai run
+```
+
+The agent (via `swerex-remote`) will then:
+1.  Clone your repo into a temporary worktree.
+2.  Checkout a new branch (e.g., `fix-demo`).
+
+### Troubleshooting & FAQ
+
+*   **Docker Issues:** Ensure Docker Desktop (or Docker Engine on Linux) is running and has sufficient resources allocated (>= 6GB RAM recommended).
+*   **`solai doctor` fails:** Follow the error messages to install missing tools or fix configuration.
+*   **Authentication:** `swerex-remote` needs API keys for the chosen model (e.g., `OPENAI_API_KEY`). See SWE-ReX documentation for details.
+*   **Q: I'm on an older system where the binary is still called `swe-rex`.**
+    **A:** Run `export SWE_REX_BIN=swe-rex` in your terminal before running `solai` commands.
+
+## Contributing
+
+Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information on how to contribute to this project. 
