@@ -127,8 +127,13 @@ jobs:
           # bootstrap
           make bootstrap-solai
 
+          # Build the docker image required by solai
+          echo "--- Building solai Docker image ---"
+          docker build -t solai-smoke-test:latest -f ../src/solai/docker/foundry_sol.Dockerfile ..
+          echo "--- Docker image build finished ---"
+
           # Verify environment *after* init and bootstrap
-          echo "--- Running solai doctor after init/bootstrap ---"
+          echo "--- Running solai doctor after init/bootstrap/build ---"
           solai doctor
           echo "--- solai doctor finished ---"
 
