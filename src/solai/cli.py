@@ -1,5 +1,5 @@
 from pathlib import Path
-import shutil, subprocess, platform, importlib.resources as pkg
+import shutil, subprocess, platform, importlib.resources as pkg, yaml
 import typer
 from solai.runner import run_backlog, doctor as run_doctor
 
@@ -31,19 +31,37 @@ def init(update: bool = typer.Option(False, "-u", "--update",
     
     typer.echo("✅  Run `make bootstrap-solai`")
 
+    # ---- placeholder digest warning ------------------------------------
+    cfg = Path(".solai.yaml")
+    if cfg.exists():
+        docker_image = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+        if "placeholder_digest" in docker_image:
+            typer.secho(
+                "⚠  .solai.yaml still has placeholder_digest — "
+                "run `solai image-rebuild` and update the file.",
+                fg="yellow")
+
 # ----- run ---------------------------------------------------
 @app.command()
 def run(config: Path = Path(".solai.yaml"),
-        once: bool = typer.Option(True, help="Exit after backlog drains"),
-        max_concurrency: int = typer.Option(4)):
+        once: bool = typer.Option(False, "--once/--watch",
+                                  help="Exit after one backlog pass"),
+        max_concurrency: int = typer.Option(4),
+        log_file: Path = typer.Option(".solai/logs/run.log")):
     """Run backlog tasks."""
-    run_backlog(config, once, max_concurrency)
+    run_backlog(config, once, max_concurrency, log_file)
 
 # ----- doctor -----------------------------------------------
 @app.command()
 def doctor():
     """Environment self-test."""
     run_doctor()
+
+@app.command("image-rebuild")
+def image_rebuild():
+    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
+    from solai.runner import rebuild_image
+    rebuild_image()
 
 if __name__ == "__main__":
     app() 
