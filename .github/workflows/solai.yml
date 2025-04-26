@@ -52,13 +52,17 @@ jobs:
           # 3) Make it executable
           chmod +x "$HOME/.foundry/bin/foundryup"
 
-          # 4) Run foundryup to install the full suite
+          # 4) Add foundry bin to PATH for this step
+          export PATH="$HOME/.foundry/bin:$PATH"
+
+          # 5) Run foundryup to install the full suite
           "$HOME/.foundry/bin/foundryup"
 
-          # 5) Verify that the core binaries landed in ~/.foundry/bin
+          # 6) Verify the installation
           ls -l "$HOME/.foundry/bin"
+          forge --version
 
-          # 6) Persist that directory so future steps see them
+          # 7) Persist foundry bin directory in GITHUB_PATH for future steps
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Set up Docker so `solai doctor` will see it
