@@ -128,9 +128,16 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
         - Builds the `solai` wheel (`python -m build`).
     - **Package Installation:**
         - Uses shell expansion to locate the built wheel file.
-        - Installs the wheel with `[ai]` extras using `pipx install --include-deps "${wheel}[ai]"`.
-        - The explicit Python 3.12 setup prevents version mismatch issues when `pipx` creates the virtual environment.
-    - **Smoke Test:** Creates a temporary directory, initializes a git repo, adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`), runs `solai init`, `make bootstrap-solai`, and finally `solai run --once --max-concurrency 1`. This provides a basic end-to-end test of the core workflow.
+        - Installs the base wheel using `pipx install --include-deps "$wheel"`.
+        - AI dependencies (SWE-Agent/ReX) are later injected by the `bootstrap-solai` make target.
+    - **Environment Verification:**
+        - Runs `solai doctor` to verify the basic CLI installation.
+    - **Smoke Test:**
+        - Creates a temporary directory and initializes a git repo.
+        - Adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`).
+        - Runs `solai init` to set up project configuration.
+        - Uses `make bootstrap-solai` to inject AI dependencies.
+        - Tests the core workflow with `solai run --once --max-concurrency 1`.
 
 ## 10. Development Environment Setup (`bootstrap/`)
 
