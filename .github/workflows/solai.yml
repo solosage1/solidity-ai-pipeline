@@ -52,7 +52,7 @@ jobs:
           chmod +x "$HOME/.foundry/bin/foundryup"
 
           # 4) Run foundryup to install the full suite
-          "$HOME/.foundry/bin/foundryup" --yes
+          "$HOME/.foundry/bin/foundryup"
 
           # 5) Verify that the core binaries landed in ~/.foundry/bin
           ls -l "$HOME/.foundry/bin"
