@@ -18,10 +18,13 @@ dependencies    = [
 ]
 
 [tool.hatch.build]
-only-packages = true
+# only-packages = true  # <<< Commented out to allow non-package data
+include = [
+  "/src/solai", # Include the main package directory and its contents
+]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/solai"]
+# [tool.hatch.build.targets.wheel] # <<< Removed specific target config, relying on general build config
+# packages = ["src/solai"]
 
 [project.scripts]
 solai = "solai.cli:app"
