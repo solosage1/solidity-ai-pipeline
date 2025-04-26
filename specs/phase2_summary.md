@@ -120,11 +120,14 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
 - **Trigger:** Runs on push events.
 - **Job (`smoke`):**
     - Runs on `ubuntu-latest`.
-    - Checks out code.
+    - **Python Environment:**
+        - Sets up Python 3.12 using `actions/setup-python@v4`.
+        - Installs build dependencies (`build`, `hatchling`) to support PEP 517 wheel building.
     - Sets up Docker Buildx/QEMU.
-    - Builds the `solai` wheel (`python -m build`).
-    - Installs the built wheel using `pipx install --include-deps 'dist/solai-*.whl[ai]'`.
-    - Runs `solai doctor` to verify the environment setup within the CI runner.
+    - **Package Building & Installation:**
+        - Builds the `solai` wheel (`python -m build`).
+        - Uses shell expansion to locate the built wheel file.
+        - Installs the wheel with `[ai]` extras using `pipx install --include-deps "${wheel}[ai]"`.
     - **Smoke Test:** Creates a temporary directory, initializes a git repo, adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`), runs `solai init`, `make bootstrap-solai`, and finally `solai run --once --max-concurrency 1`. This provides a basic end-to-end test of the core workflow.
 
 ## 10. Development Environment Setup (`bootstrap/`)
