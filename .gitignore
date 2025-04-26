@@ -24,3 +24,6 @@ ENV/
 # IDE / OS cruft
 .DS_Store
 *.swp 
+
+# Temporary diff files
+temp_diff* 

@@ -61,7 +61,7 @@ jobs:
           export PATH="$HOME/.foundry/bin:$PATH"
 
           # 5) Run foundryup to install the full suite
-          foundryup || echo "foundryup command failed with exit code $?"
+          foundryup --version nightly-2024-03-25 || echo "foundryup command failed with exit code $?"
 
           # 6) Verify binary exists in the expected location
           echo "--- Verifying forge install location ---"

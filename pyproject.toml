@@ -39,6 +39,15 @@ ai = [
   # install latest SWE-ReX from GitHub
   "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
 ]
+test = [
+  "pytest>=8.0.0",
+  "pytest-cov>=4.1.0",
+]
 
 [tool.hatch.metadata]
-allow-direct-references = true 
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=solai --cov-report=term-missing" 
