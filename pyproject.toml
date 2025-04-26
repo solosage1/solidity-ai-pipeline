@@ -26,6 +26,9 @@ include = [
 # [tool.hatch.build.targets.wheel] # <<< Removed specific target config, relying on general build config
 # packages = ["src/solai"]
 
+[tool.hatch.build.targets.wheel] 
+packages = ["src/solai"] # <<< Restore package definition
+
 [project.scripts]
 solai = "solai.cli:app"
 
