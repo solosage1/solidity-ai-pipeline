@@ -28,10 +28,9 @@ jobs:
         run: |
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
-          # First install dependencies
-          pip install "typer>=0.12" "rich>=13" "pyyaml>=6"
-          # Then install the wheel with AI extras
-          pip install "$wheel[ai]"
+          # upgrade pip and install the wheel (with its [ai] extra)
+          python -m pip install --upgrade pip
+          python -m pip install "${wheel}[ai]"
 
       # 5) Verify environment
       - name: solai doctor
