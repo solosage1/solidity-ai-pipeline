@@ -4,7 +4,7 @@ agent:
   repo_prompt: "Fix failing tests"
 
 env:
-  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
+  docker_image: "foundry_sol:0.4.1"
   post_startup_cmds:
     - ["forge", "test", "-q"]
 

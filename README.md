@@ -5,14 +5,13 @@ Plug-and-play AI improvement pipeline for Solidity projects.
 ## Installation
 
 ```bash
-# Installs solai and swe-rex
-pipx install solai
+# 1) install core CLI
+pipx install solai[ai] --include-deps
 
-# SWE-Agent requires manual installation from source:
-git clone https://github.com/princeton-nlp/SWE-agent.git
-cd SWE-agent
-pip install -e .
-# Ensure the sweagent command is now in your PATH
+# 2) inject the latest AI backends into that same solai venv
+pipx inject solai \
+  git+https://github.com/princeton-nlp/SWE-agent.git@main \
+  git+https://github.com/SWE-agent/SWE-ReX.git@main
 ```
 
 ## SWE-ReX Authentication
@@ -29,7 +28,7 @@ The SWE-ReX service uses API key authentication. When making requests to the ser
 ## Quick Start
 
 ```bash
-# In your Solidity project directory (after installing solai and SWE-Agent):
+# In your Solidity project directory (after installing solai & AI deps):
 solai init
 make bootstrap-solai
 make solai-run

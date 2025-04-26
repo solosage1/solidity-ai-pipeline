@@ -14,9 +14,9 @@ def _run(cmd, cwd, log):
     if p.returncode:
         raise subprocess.CalledProcessError(p.returncode, cmd)
 
-def image_present(digest: str) -> bool:
+def image_present(tag: str) -> bool:
     out = subprocess.check_output(
-        f"docker images --no-trunc --format '{{{{.Digest}}}}' {digest}",
+        f"docker images --format '{{{{.Repository}}}}:{{{{.Tag}}}}' {tag}",
         shell=True, text=True).strip()
     return bool(out)
 
@@ -34,7 +34,7 @@ def doctor():
       ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
       ("forge --version", "Foundry"),
       ("slither --version", "Slither"),
-      ("swe-rex --version", "SWE-ReX")
+      ("swerex-remote --version", "SWE-ReX")
     ]
     for cmd, name in core_checks:
         try:
@@ -52,11 +52,9 @@ def doctor():
 
     cfg = Path(".solai.yaml")
     if cfg.exists():
-        digest = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
-        if "placeholder_digest" in digest:
-            print("✗ .solai.yaml still contains placeholder_digest – run `solai image-rebuild`"); sys.exit(1)
-        if not image_present(digest):
-            print("✗ Image digest not present locally – pull or rebuild."); sys.exit(1)
+        tag = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+        if not image_present(tag):
+            print("✗ Image tag missing – run `solai image-rebuild`"); sys.exit(1)
 
     print("ℹ  Ensure Docker Desktop memory ≥ 6 GB")
     print("🚀  doctor finished – environment ready")
@@ -67,12 +65,8 @@ def rebuild_image():
     here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
     subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
                    check=True)
-    digest = subprocess.check_output(
-        f"docker inspect --format '{{{{index .RepoDigests 0}}}}' {img_tag}",
-        shell=True, text=True).strip()
-    subprocess.run(["docker", "push", digest], check=True)
-    print("✓ image pushed:", digest)
-    print("→ Update .solai.yaml with the new digest")
+    print("✓ image built:", img_tag)
+    print("→ Update .solai.yaml with the new tag")
 
 # ── backlog runner ───────────────────────────────────────
 def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "solai"
-version         = "0.4.1"
+version         = "0.4.2"
 description     = "Plug-and-play AI improvement pipeline for Solidity projects"
 readme          = "README.md"
 requires-python = ">=3.12"
@@ -14,11 +14,22 @@ dependencies    = [
   "typer>=0.12",
   "rich>=13",
   "pyyaml>=6",
-  "swe-rex==1.2.1"
+  # AI dependencies are now provided via the [ai] extra below
 ]
 
 [project.scripts]
 solai = "solai.cli:app"
 
+[project.optional-dependencies]
+ai = [
+  # install latest SWE-Agent from GitHub
+  "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent",
+  # install latest SWE-ReX from GitHub
+  "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
+]
+
 [tool.hatch.build]
-packages = ["src/solai"] 
+packages = ["src/solai"]
+
+[tool.hatch.metadata]
+allow-direct-references = true 
