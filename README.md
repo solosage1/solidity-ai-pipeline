@@ -56,6 +56,7 @@ Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
 
 ## Implementation Details
 
-For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
+For detailed summaries of the implementation phases, please refer to the documents in the specs directory:
 
-- [Phase 1 Summary](specs/phase1_summary.md) 
+- [Phase 1 Summary (v0.4.0)](specs/phase1_summary.md)
+- [Phase 2 Summary (v0.4.2)](specs/phase2_summary.md) 
