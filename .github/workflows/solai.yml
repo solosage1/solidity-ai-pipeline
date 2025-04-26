@@ -23,8 +23,12 @@ jobs:
       - name: Build wheel
         run: python -m build
       
-      - name: Install solai
-        run: pipx install --include-deps 'dist/solai-*.whl[ai]'
+      - name: Install solai (with `[ai]` extras)
+        run: |
+          # Find exactly one wheel in dist/
+          wheel=$(ls dist/solai-*.whl)
+          echo "Installing wheel: $wheel[ai]"
+          pipx install --include-deps "${wheel}[ai]"
       
       - name: Smoke test
         run: |
