@@ -44,6 +44,7 @@ jobs:
         run: |
           # 1) Create Foundry directories
           mkdir -p "$HOME/.foundry/bin"
+          mkdir -p "$HOME/.config/.foundry/bin"
 
           # 2) Download foundryup installer directly to the bin directory
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
