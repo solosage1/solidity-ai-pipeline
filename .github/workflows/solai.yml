@@ -34,6 +34,9 @@ jobs:
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
+          # Create foundry directories
+          mkdir -p /home/runner/.foundry/bin
+          
           # Download and execute foundryup installer
           curl -L https://foundry.paradigm.xyz | bash
           
