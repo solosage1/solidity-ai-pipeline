@@ -80,6 +80,12 @@ jobs:
           # 10) Persist foundry paths in GITHUB_PATH for future steps
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+          # 11) Additional debug: Check if forge is in other common locations
+          echo "Checking other possible Foundry locations:"
+          ls -la /usr/local/bin/forge || echo "Not in /usr/local/bin"
+          ls -la "$HOME/.cargo/bin/forge" || echo "Not in ~/.cargo/bin"
+          ls -la "$HOME/.config/.foundry/bin/forge" || echo "Not in ~/.config/.foundry/bin"
 
       # 5) Set up Docker so `solai doctor` will see it
       - name: Set up QEMU emulation
@@ -100,15 +106,7 @@ jobs:
 
       # 6) Verify environment
       - name: solai doctor
-        run: |
-          # Ensure Foundry commands are available
-          export PATH="$HOME/.foundry/bin:$PATH"
-
-          echo "→ Foundry: $(which forge || echo 'forge not found')"
-          echo "→ Forge version: $(forge --version || echo 'failed to invoke forge')"
-
-          # Now run the standard environment check
-          solai doctor
+        run: solai doctor
 
       # 7) Full end-to-end smoke test
       - name: Smoke test
