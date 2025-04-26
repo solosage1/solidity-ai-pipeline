@@ -54,7 +54,13 @@ solai run         # Run continuously (default)
 
 - Python 3.12+
 - Docker
-- Foundry (installed automatically in CI, manual install needed locally)
+- Foundry (installed via foundryup - automated in CI, manual install needed locally)
+    ```bash
+    # Local installation:
+    curl -L https://foundry.paradigm.xyz | bash
+    source ~/.bashrc  # or restart your terminal
+    foundryup
+    ```
 - Slither
 - SWE-ReX (installed automatically with solai[ai])
 - SWE-Agent (installed automatically with solai[ai])

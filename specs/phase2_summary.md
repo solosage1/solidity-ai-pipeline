@@ -137,7 +137,11 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
     - **Package Installation & Verification:**
         - Uses shell expansion to locate the built wheel file.
         - Installs the wheel with its AI extras using `pip install "${wheel}[ai]"`
-        - Installs Foundry using the official installer
+        - Installs Foundry using a robust installation process:
+            - Downloads the foundryup installer
+            - Directly downloads the foundryup binary from the official repository
+            - Makes the binary executable
+            - Runs foundryup to install Foundry components
         - Verifies the environment with `solai doctor`
     - **Smoke Test:**
         - Creates a temporary directory and initializes a git repo.
