@@ -28,14 +28,11 @@ The primary objective of Phase 2 was to move beyond the foundational package str
 
 ## 4. Installation and Bootstrapping (`README.md`, `Makefile.inc`)
 
-- **Installation Process:** The recommended installation method was updated for reliability:
-    1. Install the wheel directly with its AI extras using `pip install dist/solai-*.whl[ai]`
-    2. For development, use `pip install -e .[ai]`
-    3. Use `make bootstrap-solai` to:
-        - Ensure pipx is on PATH
-        - Install/upgrade solai if needed
-        - Verify the environment with `solai doctor`
-- **`Makefile.inc` (`bootstrap-solai`):** The `bootstrap-solai` target was updated to handle the complete installation process, including environment verification.
+- **Installation Process:** The recommended installation method (both from source and potentially PyPI) is `pip install .[ai]` (or the built wheel `dist/solai-*.whl[ai]`). This installs `solai` along with `sweagent` and `swe-rex` from their Git repositories due to the `[ai]` extra.
+- **Bootstrapping:** Use `make bootstrap-solai` to:
+    - Ensure `pipx` is available and on the PATH (though `solai` itself is installed via `pip`).
+    - Run `solai doctor` to verify the complete environment (Python, Docker, Foundry, Slither, SWE-ReX, SWE-Agent, configured Docker image).
+- **`Makefile.inc`:** The `bootstrap-solai` target primarily runs `pipx ensurepath` and `solai doctor`. It *no longer* handles the installation of `solai` or its dependencies itself (this is done via `pip install`). The `pipx inject` lines shown in earlier diffs were part of an intermediate step and removed.
 
 ## 5. Configuration (`.solai.yaml` Template)
 
@@ -46,7 +43,7 @@ The template configuration file (`src/solai/templates/dot_solai.yaml`) was restr
     - `usd_cap`: Kept from Phase 1.
     - `repo_prompt`: Added field for the high-level task description given to the agent (default: "Fix failing tests").
 - **`env`:**
-    - `docker_image`: Changed to use a placeholder format `ghcr.io/yourorg/foundry_sol@sha256:<YOUR_DIGEST_HERE>` by default, prompting the user to build/push their own image and update the digest. *Note: The runner code currently uses tags (`foundry_sol:0.4.x`), this template change anticipates a shift towards digests.*
+    - `docker_image`: Changed to use a placeholder format `ghcr.io/yourorg/foundry_sol@sha256:<YOUR_DIGEST_HERE>` by default. *Note: The CI workflow builds and uses a *tag* (`solai-smoke-test:latest`) and updates the config file in the CI environment. The `doctor` command checks for the *tag* specified in the config. The `image-rebuild` command currently builds a tag like `foundry_sol:0.4.1` but doesn't integrate with the main workflow or config update automatically.*
     - `post_startup_cmds`: Format changed to a list of command lists (e.g., `[["forge", "test", "-q"]]`).
 - **`task`:** New section added:
     - `branch`: Specifies the Git branch name the agent should create/use (default: `fix-demo`).
@@ -77,18 +74,20 @@ The template configuration file (`src/solai/templates/dot_solai.yaml`) was restr
 The `runner.py` module saw the most significant changes, replacing the Phase 1 stubs with functional logic.
 
 - **`_run` Helper:** Introduced a helper function to execute shell commands, stream their stdout/stderr to the console and optionally to a log file, and raise an error on non-zero exit codes.
-- **`image_present`:** Updated to check for the existence of a Docker image based on its *tag* (Repository:Tag format).
+- **`image_present`:** Updated to check for the existence of a Docker image based on its *tag* (Repository:Tag format) as specified in `.solai.yaml`.
 - **`doctor` function:**
     - **Checks:**
-        - Added check for `swerex-remote --version` (SWE-ReX CLI).
-        - Added an *optional* check for `sweagent --version`, printing a warning and installation instructions if missing (since it requires manual source install).
-        - Checks for the Docker image *tag* specified in `.solai.yaml` using `image_present`. Exits if missing, directing the user to `solai image-rebuild`.
-    - **Guidance:** Prints informational messages about running in WSL2 on Windows and ensuring sufficient Docker RAM (≥ 6 GB).
-    - **Removed:** No longer attempts to automatically build the Docker image if missing; relies on the user running `image-rebuild` or managing it manually.
+        - Verifies Python version (`>=3.12`).
+        - Checks core tools: `pipx`, `docker` CLI/engine, `forge`, `slither`, `swerex-remote`.
+        - *Optionally* checks for `sweagent`, printing a warning if missing (as it's installed via the `[ai]` extra).
+        - Checks if the Docker image *tag* specified in `.solai.yaml` (`env.docker_image`) exists locally using `image_present`.
+    - **Guidance:** Prints informational messages about WSL2 and Docker RAM.
+    - **Removed:** No longer attempts to automatically build the Docker image.
+    - **Binary Name:** The check for the SWE-ReX binary now looks for `swerex-remote` (the name installed by `pip install swe-rex`), replacing the previous check for `swe-rex`.
 - **`rebuild_image` function (New):**
-    - Builds the Docker image using `src/solai/docker/foundry_sol.Dockerfile` with a hardcoded tag (e.g., `foundry_sol:0.4.1`). *Note: Version synchronization between build tag and package version should be considered.*
+    - Builds the Docker image using `src/solai/docker/foundry_sol.Dockerfile` with a hardcoded tag (e.g., `foundry_sol:0.4.1`).
     - Prints the built image tag to the console.
-    - *Does not currently push the image or update `.solai.yaml` automatically.*
+    - *Does not push the image or update `.solai.yaml`.*
 - **`run_backlog` function (Implemented):**
     - **Configuration Loading:** Reads settings from the specified config file (`.solai.yaml`).
     - **Model Date Pinning:** Validates that the `agent.model` string includes a date suffix (e.g., `-YYYY-MM-DD`).
@@ -104,6 +103,7 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
             - `problem_statement.text`: From `agent.repo_prompt` config.
             - `env.deployment.image`: From `env.docker_image` config.
         - **Agent Execution:** Runs `swe-rex run --image <image_tag> -- sweagent run ...` using the `_run` helper, logging output. Passes the generated `swe.yaml` and specifies `--output-tar patch.tar`.
+            - **Binary Name:** The command executed is now `swerex-remote` by default, read from the `env.swe_rex_bin` config setting. This can be overridden globally using the `SWE_REX_BIN` environment variable for backward compatibility if the binary is still named `swe-rex` on a system.
         - **Patch Handling:**
             - Checks if `patch.tar` was created.
             - Extracts the tarball.
@@ -135,32 +135,32 @@ The `runner.py` module saw the most significant changes, replacing the Phase 1 s
         - Installs the PEP 517 build frontend (`python -m pip install build`).
         - Builds the `solai` wheel (`python -m build`).
     - **Package Installation & Verification:**
-        - Uses shell expansion to locate the built wheel file.
-        - Installs the wheel with its AI extras using `pip install "${wheel}[ai]"`
-        - Installs Foundry using a robust installation process:
-            - Downloads the foundryup installer
-            - Directly downloads the foundryup binary from the official repository
-            - Makes the binary executable
-            - Runs foundryup to install Foundry components
-        - Verifies the environment with `solai doctor`
+        - Locates the built wheel file.
+        - Installs the wheel with its AI extras using `pip install "${wheel}[ai]".
+        - Installs Slither explicitly (`pip install slither-analyzer`).
+        - Installs Foundry using a multi-step process involving `curl` and `foundryup`, ensuring binaries are correctly placed and PATH is updated.
+        - *Does not* run `solai doctor` at this stage.
     - **Smoke Test:**
-        - Creates a temporary directory and initializes a git repo.
-        - Adds minimal Solidity contract (`Y.sol`) and a failing test (`Y.t.sol`).
-        - Runs `solai init` to set up project configuration.
-        - Uses `make bootstrap-solai` in the test directory.
-        - Tests the core workflow with `solai run --once --max-concurrency 1`.
+        - Creates a temporary directory (`smoke/`) and sets up a minimal Solidity project with a failing test.
+        - Runs `solai init`.
+        - Runs `make bootstrap-solai` (which now primarily runs `solai doctor`).
+        - **Builds the required Docker image** (`docker build -t solai-smoke-test:latest ...`).
+        - **Updates the `.solai.yaml** in the `smoke/` directory to use the `solai-smoke-test:latest` tag via an inline python script.
+        - **Runs `solai doctor** to verify the environment *after* all setup, including the Docker image build and config update.
+        - Runs the core workflow `solai run --once --max-concurrency 1`.
 
 ## 10. Development Environment Setup (`bootstrap/`)
 
-- Added `bootstrap/install_python_env.sh`: A script to create a Python 3.12 virtual environment (`.venv`), install core dependencies, and install `solai` in editable mode with the `[ai]` extras. Useful for local development.
+- Added `bootstrap/install_python_env.sh`: A script to create a Python 3.12 virtual environment (`.venv`), install core dependencies (`typer`, `rich`, `pyyaml`), and install `solai` in editable mode with the `[ai]` extras (`pip install -e .[ai]`). Useful for local development.
 
 ## 11. Documentation (`README.md`)
 
 - Updated significantly:
-    - New installation instructions using `pipx install ...[ai]` and `pipx inject`.
-    - Added section explaining SWE-ReX authentication requirements (executable name, API key header/flag).
-    - Added "Environment Notes" section covering WSL2 guidance, Docker RAM requirements (≥ 6 GB), and log file location (`.solai/logs/run.log`).
-    - Added reference link placeholder for this Phase 2 summary.
+    - Installation instructions clarified to use `pip install .[ai]` (or the wheel) for both `solai` and AI dependencies.
+    - Requirements updated (Slither, SWE-Agent, SWE-ReX installed via `[ai]` extra).
+    - SWE-ReX authentication details added.
+    - Environment notes (WSL2, Docker RAM, Logs) added/updated.
+    - Phase summary links updated.
 
 ## 12. Gitignore
 

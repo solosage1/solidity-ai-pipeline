@@ -31,11 +31,16 @@ def doctor():
     core_checks = [
       ("pipx --version", "pipx available"),
       ("docker --version", "Docker CLI"),
-      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
+      ("docker info --format \'{{.ServerVersion}}\'", "Docker engine"),
       ("forge --version", "Foundry"),
       ("slither --version", "Slither"),
-      ("swerex-remote --version", "SWE-ReX")
     ]
+    # Check for swerex-remote binary presence
+    if not shutil.which("swerex-remote"):
+        print("✗ SWE-ReX not found - did pip install succeed?"); sys.exit(1)
+    else:
+        print("✓ SWE-ReX")
+
     for cmd, name in core_checks:
         try:
             subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
@@ -97,7 +102,8 @@ env:
 """)
 
                 # Run SWE-Agent inside swe-rex
-                _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
+                _run([os.getenv("SWE_REX_BIN", "swerex-remote"), "run",
+                      "--image", cfg["env"]["docker_image"],
                       "--", "sweagent", "run", "--config", "swe.yaml",
                       "--output-tar", "patch.tar"], workdir, log)
 
