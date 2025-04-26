@@ -132,8 +132,13 @@ jobs:
           docker build -t solai-smoke-test:latest -f ../src/solai/docker/foundry_sol.Dockerfile ..
           echo "--- Docker image build finished ---"
 
-          # Verify environment *after* init and bootstrap
-          echo "--- Running solai doctor after init/bootstrap/build ---"
+          # Update .solai.yaml with the actual image tag used
+          echo "--- Updating .solai.yaml with image tag ---"
+          python -c 'import yaml; from pathlib import Path; cfg_path = Path(".solai.yaml"); data = yaml.safe_load(cfg_path.read_text()); data["env"]["docker_image"] = "solai-smoke-test:latest"; cfg_path.write_text(yaml.safe_dump(data)); print(f"Updated {cfg_path} with image tag: solai-smoke-test:latest")'
+          echo "--- .solai.yaml update finished ---"
+
+          # Verify environment *after* init, bootstrap, build, and config update
+          echo "--- Running solai doctor after init/bootstrap/build/config-update ---"
           solai doctor
           echo "--- solai doctor finished ---"
 
