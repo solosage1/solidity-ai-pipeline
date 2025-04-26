@@ -23,14 +23,20 @@ jobs:
       - name: Build wheel
         run: python -m build
 
-      # 4) Install your wheel + [ai] extras via pip
+      # 4) Install your wheel + AI backends via pip
       - name: Install solai wheel (with AI extras)
         run: |
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
-          # upgrade pip and install the wheel (with its [ai] extra)
           python -m pip install --upgrade pip
-          python -m pip install "${wheel}[ai]"
+
+          # 4a) Install the solai package itself
+          python -m pip install "$wheel"
+
+          # 4b) Manually pull in SWE-Agent & SWE-ReX into the same env
+          python -m pip install \
+            git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent \
+            git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex
 
       # 5) Verify environment
       - name: solai doctor
