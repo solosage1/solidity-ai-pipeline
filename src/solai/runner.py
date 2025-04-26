@@ -16,7 +16,7 @@ def _run(cmd, cwd, log):
 
 def image_present(tag: str) -> bool:
     out = subprocess.check_output(
-        f"docker images --format '{{{{.Repository}}}}:{{{{.Tag}}}}' {tag}",
+        f"docker images --no-trunc --format '{{{{.Digest}}}}' {tag}",
         shell=True, text=True).strip()
     return bool(out)
 
