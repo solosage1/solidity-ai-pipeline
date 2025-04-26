@@ -42,16 +42,22 @@ jobs:
       # 4b) Install Foundry
       - name: Install Foundry
         run: |
-          # 1) Download & install the foundryup installer
-          curl -L https://foundry.paradigm.xyz | bash
+          # 1) Create Foundry directories
+          mkdir -p "$HOME/.foundry/bin"
 
-          # 2) Invoke the installer directly (no PATH tricks)
+          # 2) Download foundryup installer directly to the bin directory
+          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
+          
+          # 3) Make it executable
+          chmod +x "$HOME/.foundry/bin/foundryup"
+
+          # 4) Run foundryup to install the full suite
           "$HOME/.foundry/bin/foundryup" --yes
 
-          # 3) Verify that the core binaries landed in ~/.foundry/bin
+          # 5) Verify that the core binaries landed in ~/.foundry/bin
           ls -l "$HOME/.foundry/bin"
 
-          # 4) Persist that directory so future steps see them
+          # 6) Persist that directory so future steps see them
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Set up Docker so `solai doctor` will see it
