@@ -55,33 +55,39 @@ jobs:
           # 4) Add foundry bin to PATH for this step
           export PATH="$HOME/.foundry/bin:$PATH"
 
-          # 5) Run foundryup to install the full suite
-          "$HOME/.foundry/bin/foundryup"
+          # 5) Run foundryup to install the full suite and capture exit code
+          "$HOME/.foundry/bin/foundryup" || echo "foundryup command failed with exit code $?"
 
-          # 6) Debug: Show installation results
+          # 6) Debug: Search for the actual forge binary location
+          echo "--- Searching for forge binary recursively in ~/.foundry ---"
+          find "$HOME/.foundry" -name forge -type f -ls
+          echo "--- End search ---"
+
+          # 7) Debug: Show installation results (original step 6)
           echo "Contents of ~/.foundry/bin:"
           ls -la "$HOME/.foundry/bin"
           
+          # 8) Debug: Show contents of ~/.local/bin (original step 7)
           echo "Contents of ~/.local/bin:"
           ls -la "$HOME/.local/bin" || true
           
-          # 7) Find forge binary
-          echo "Looking for forge binary:"
-          find "$HOME" -name forge -type f 2>/dev/null || true
+          # 9) Debug: Find forge binary (original step 7, less reliable now)
+          # echo "Looking for forge binary:"
+          # find "$HOME" -name forge -type f 2>/dev/null || true 
           
-          # 8) Update PATH to include all possible Foundry locations
+          # 10) Update PATH to include all possible Foundry locations (original step 8)
           export PATH="$HOME/.foundry/bin:$HOME/.local/bin:$PATH"
           
-          # 9) Verify the installation
+          # 11) Verify the installation (original step 9)
           echo "Current PATH: $PATH"
           which forge || echo "forge not found in PATH"
           forge --version || echo "forge command failed"
 
-          # 10) Persist foundry paths in GITHUB_PATH for future steps
+          # 12) Persist foundry paths in GITHUB_PATH for future steps (original step 10)
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           
-          # 11) Additional debug: Check if forge is in other common locations
+          # 13) Additional debug: Check if forge is in other common locations (original step 11)
           echo "Checking other possible Foundry locations:"
           ls -la /usr/local/bin/forge || echo "Not in /usr/local/bin"
           ls -la "$HOME/.cargo/bin/forge" || echo "Not in ~/.cargo/bin"
