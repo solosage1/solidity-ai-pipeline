@@ -45,16 +45,13 @@ jobs:
           # 1) Download & install the foundryup installer
           curl -L https://foundry.paradigm.xyz | bash
 
-          # 2) Ensure we can run foundryup right now
-          export PATH="$HOME/.foundry/bin:$PATH"
+          # 2) Invoke the installer directly (no PATH tricks)
+          "$HOME/.foundry/bin/foundryup" --yes
 
-          # 3) Automatically install the full Foundry suite (forge, cast, anvil, etc.)
-          foundryup --yes
-
-          # 4) Verify that forge got installed
+          # 3) Verify that the core binaries landed in ~/.foundry/bin
           ls -l "$HOME/.foundry/bin"
 
-          # 5) Persist the Foundry bin directory for all later steps
+          # 4) Persist that directory so future steps see them
           echo "$HOME/.foundry/bin" >> $GITHUB_PATH
 
       # 5) Set up Docker so `solai doctor` will see it
@@ -77,14 +74,13 @@ jobs:
       # 6) Verify environment
       - name: solai doctor
         run: |
-          # Make sure Foundry tools are on PATH for this invocation
+          # Ensure Foundry commands are available
           export PATH="$HOME/.foundry/bin:$PATH"
 
-          # Quick sanity check
-          echo "→ which forge: $(which forge || echo 'not found')"
-          echo "→ forge version: $(forge --version || echo 'forge failed')"
+          echo "→ Foundry: $(which forge || echo 'forge not found')"
+          echo "→ Forge version: $(forge --version || echo 'failed to invoke forge')"
 
-          # Finally, run the environment self-test
+          # Now run the standard environment check
           solai doctor
 
       # 7) Full end-to-end smoke test
