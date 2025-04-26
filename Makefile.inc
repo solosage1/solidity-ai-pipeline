@@ -2,9 +2,9 @@
 bootstrap-solai:
 	pipx ensurepath
 	@if command -v solai >/dev/null; then \
-	    pipx upgrade solai || true; \
+	    pipx upgrade solai --include-deps || true; \
 	else \
-	    pipx install solai[ai]; \
+	    pipx install --include-deps solai[ai]; \
 	fi
 	# Ensure SWE-Agent & SWE-ReX are present in the same venv
 	pipx inject --force solai \

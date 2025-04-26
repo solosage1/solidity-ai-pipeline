@@ -1,16 +1,15 @@
 name: solai-phase2
 on: push
 jobs:
-  smoke:
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
       - name: Build wheel
         run: python -m build
-      - name: Install solai
-        run: pipx install dist/*.whl
+      - name: Install solai (with `[ai]` extras)
+        run: pipx install --include-deps 'dist/solai-*.whl[ai]'
+      - name: Verify environment
+        run: solai doctor
       - name: Smoke test
         run: |
           mkdir smoke && cd smoke

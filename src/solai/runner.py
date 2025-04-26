@@ -71,21 +71,21 @@ def rebuild_image():
 # ── backlog runner ───────────────────────────────────────
 def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
     cfg = yaml.safe_load(cfg_path.read_text())
+    # ensure log directory exists
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     model = cfg["agent"]["model"]
     if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
         print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
 
     def _worker():
-        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
-             open(log_path, "a") as log:
-            repo_dir = Path(tmp) / "repo"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            _run(["git", "clone", ".", repo_dir], Path("."), log)
-            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
-                 Path("."), log)
-
-            # Write SWE-Agent config
-            (repo_dir / "swe.yaml").write_text(f"""
+        with tempfile.TemporaryDirectory(prefix="solai-") as tmp:
+            workdir = Path(tmp) / "repo"
+            _run(["git", "clone", ".", str(workdir)], Path("."), None)
+            _run(["git", "-C", str(workdir), "checkout", "-b", cfg["task"]["branch"]], 
+                 Path("."), None)
+            with open(log_path, "a") as log:
+                # Write SWE-Agent config
+                (workdir / "swe.yaml").write_text(f"""
 open_pr: false
 apply_patch_locally: true
 problem_statement:
@@ -96,39 +96,43 @@ env:
     image: {cfg['env']['docker_image']}
 """)
 
-            # Run SWE-Agent inside swe-rex
-            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
-                  "--", "sweagent", "run", "--config", "swe.yaml",
-                  "--output-tar", "patch.tar"], repo_dir, log)
+                # Run SWE-Agent inside swe-rex
+                _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
+                      "--", "sweagent", "run", "--config", "swe.yaml",
+                      "--output-tar", "patch.tar"], workdir, log)
 
-            if not (repo_dir / "patch.tar").exists():
-                print("No patch produced"); return
+                if not (workdir / "patch.tar").exists():
+                    print("No patch produced"); return
 
-            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
-            diff_files = list(repo_dir.glob("*.diff")) + list(repo_dir.glob("*.patch"))
-            if not diff_files:
-                print("No diff inside patch tar"); return
-            diff = diff_files[0]
+                _run(["tar", "-xf", "patch.tar", "-C", "."], workdir, log)
+                diff_files = list(workdir.glob("*.diff")) + list(workdir.glob("*.patch"))
+                if not diff_files:
+                    print("No diff inside patch tar"); return
+                diff = diff_files[0]
 
-            stat = subprocess.check_output(
-                f"git apply --stat {diff}", shell=True, cwd=repo_dir, text=True)
-            m = re.search(r'(\d+) insertions?\(\+\), (\d+) deletions?\(-\)', stat)
-            ins = int(m.group(1)) if m else 0
-            dels = int(m.group(2)) if m else 0
-            loc = ins + dels
-            if loc == 0 or loc > 2000 or diff.stat().st_size > 100_000:
-                print("Patch size invalid"); return
+                stat = subprocess.check_output(
+                    f"git apply --stat {diff}", shell=True, cwd=workdir, text=True)
+                m = re.search(r'(\d+) insertions?\(\+\), (\d+) deletions?\(-\)', stat)
+                ins = int(m.group(1)) if m else 0
+                dels = int(m.group(2)) if m else 0
+                loc = ins + dels
+                if loc == 0 or loc > 2000 or diff.stat().st_size > 100_000:
+                    print("Patch size invalid"); return
 
-            _run(["git", "apply", str(diff)], repo_dir, log)
-            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
-            if test_res.returncode:
-                print("Tests still failing"); return
+                _run(["git", "apply", str(diff)], workdir, log)
+                test_res = subprocess.run(["forge", "test", "-q"], cwd=workdir)
+                if test_res.returncode:
+                    print("Tests still failing"); return
 
-            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
+                print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
 
     while True:
         with ThreadPoolExecutor(max_workers=max_conc) as pool:
-            pool.submit(_worker).result()
+            future = pool.submit(_worker)
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Worker failed: {e}")
         if once:
             break
         time.sleep(30) 

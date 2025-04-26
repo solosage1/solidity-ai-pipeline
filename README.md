@@ -43,6 +43,12 @@ make solai-run
 - SWE-ReX (automatically installed with solai)
 - SWE-Agent (requires manual installation from source, see above)
 
+## Environment Notes
+
+- **WSL2** (Windows): For Windows users, run `solai` inside WSL2 to ensure full Docker & POSIX support.
+- **Docker RAM**: Allocate at least **6 GB** to Docker (Settings → Resources → Memory) for Foundry and SWE-Agent.
+- **Logs**: Detailed run output is written to `.solai/logs/run.log`; inspect this for troubleshooting.
+
 ## Docker RAM Requirements
 
 **Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
