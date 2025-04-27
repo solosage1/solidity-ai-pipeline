@@ -50,23 +50,21 @@ jobs:
           set -euo pipefail
           tmp="$(mktemp)"
           # Ensure pip-compile runs quietly but exits on error
-          if ! pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp" constraints.txt; then
-             echo "::error::pip-compile failed to generate lock file from constraints.txt"
-             # Consider showing pip-compile logs here if available/needed
-             rm "$tmp" # Clean up temp file
-             exit 1
-          fi
+          pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp" constraints.txt || {
+            echo "::error::pip-compile failed to generate lock file from constraints.txt"
+            rm "$tmp" # Clean up temp file
+            exit 1
+          }
           # Compare the generated file with the committed one using unified diff
           # Filter both files to only include package lines for robust comparison
           echo "Comparing current requirements.txt with newly compiled version..."
-          if ! diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | sort) \\
-                       <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | sort); then
+          diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | sort) \
+                 <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | sort) || {
             echo "::error::requirements.txt is out of sync with constraints.txt."
             echo "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes."
-            # The diff output is already shown by the command above
             rm "$tmp" # Clean up temp file
             exit 1
-          fi
+          }
           # If diff passes, clean up and confirm
           rm "$tmp"
           echo "requirements.txt is up to date."
