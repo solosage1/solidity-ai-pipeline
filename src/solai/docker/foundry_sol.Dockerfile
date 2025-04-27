@@ -7,21 +7,22 @@ USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3-pip python3-venv \
+ && apt-get install -y --no-install-recommends python3-pip \
  && python3 -m pip install --upgrade pip \
- # Install Slither in the global site-packages
- && python3 -m pip install --no-cache-dir slither-analyzer \
- # Install pipx
- && python3 -m pip install --no-cache-dir pipx \
- # Install SWE-ReX via pipx, forcing overwrite, and verify installation
- && pipx install --force swe-rex \
- && ls -l /root/.local/bin/swerex-remote \
- && /root/.local/bin/swerex-remote --version \
+ # Install Slither and SWE-ReX directly into system site-packages
+ && python3 -m pip install --no-cache-dir slither-analyzer swe-rex \
  # Clean up apt cache
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Expose pipx shims & Slither
-ENV PATH="/root/.local/bin:$PATH"
+# --- DEBUG ONLY — uncomment below to check install location during build --- 
+# RUN echo "PATH after pip install: $PATH"                 \
+#  && echo "--- Contents of /root/.local/bin ---"          \
+#  && ls -lR /root/.local/bin || true                       \
+#  && echo "--- Contents of /usr/local/bin ---"           \
+#  && ls -lR /usr/local/bin || true
+# ------------------------------------------------------------------------
 
-# Helpful for humans: show versions at build-time (redundant for swerex now, but keep for others)
-RUN forge --version && slither --version 
+# Standard PATH should already include /usr/local/bin where pip installs scripts
+
+# Helpful for humans: show versions at build-time
+RUN forge --version && slither --version && swerex-remote --version 

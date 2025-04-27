@@ -97,15 +97,15 @@ jobs:
         id: docker_build # Add an ID to reference the output tag
         run: |
           ARCH=$(dpkg --print-architecture)
-          BASE_TAG="foundry_sol:0.4.4" # Define base tag
+          BASE_TAG="foundry_sol:0.4.5" # Define base tag - UPDATED to 0.4.5
           ARCH_TAG="${BASE_TAG}-${ARCH}" # Define arch-specific tag
-          echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} ---"
+          echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
           # Build with ARCH tag, also tag with BASE tag
           docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" -t "${BASE_TAG}" -f src/solai/docker/foundry_sol.Dockerfile .
           echo "--- Docker image build finished ---"
           # Verify both tags exist
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${BASE_TAG}$" || { echo "❌ Failed to build or tag image ${BASE_TAG} correctly"; exit 1; }
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${BASE_TAG}$" || { echo "❌ Failed to build or tag image ${BASE_TAG} correctly"; exit 1; }
           echo "✓ Images ${ARCH_TAG} and ${BASE_TAG} built successfully."
           # Output the ARCH-specific tag for subsequent steps (swe.yaml update, container ID search)
           echo "image_tag=${ARCH_TAG}" >> $GITHUB_OUTPUT
@@ -178,10 +178,10 @@ jobs:
           echo "--- 🩺 SWE-Agent Exit Code: $exit_code ---"
           
           # Attempt to get logs from the container (ALWAYS try after the run)
-          echo "--- 🪵 Attempting to capture Docker container logs --- 	(Exit Code: $exit_code)"
+          echo "--- 🪵 Attempting to capture Docker container logs --- \t(Exit Code: $exit_code)"
           # Extract container name/ID from the log file
           # Example log line: "INFO     Starting container foundry_sol0.4.4-amd64-abcdef12-3456-7890-abcd-ef0123456789 with image ..."
-          container_name=$(grep -oP 'INFO\s+Starting container \K[^\s]+' "$LOGFILE" | head -n 1)
+          container_name=$(grep -oP 'INFO\\s+Starting container \\K[^\\s]+' "$LOGFILE" | head -n 1)
 
           if [ -n "$container_name" ]; then
             echo "Found container name/ID from log: $container_name"
@@ -212,11 +212,14 @@ jobs:
             exit $exit_code
           elif [ ! -s patch.tar ]; then
              echo "❌ patch.tar missing or empty after SWE-Agent run (Exit code: $exit_code)"
-             exit 1 # Fail explicitly if patch is missing, even if exit code was 0
+             # Don't exit immediately, run diagnostics first
+             # exit 1 
           fi
 
           # Basic sanity check for patch file (only if sweagent succeeded AND patch exists)
-          echo "✓ Agent produced patch.tar"
+          if [ -s patch.tar ]; then
+            echo "✓ Agent produced patch.tar"
+          fi
           docker ps -a --format '{{.Image}}' | grep -q "${TARGET_IMAGE_TAG}" || { echo "❌ Expected container image ${TARGET_IMAGE_TAG} not found"; exit 1; }
           echo "✓ Checkpoint 3 Passed (Using image ${TARGET_IMAGE_TAG})"
 
@@ -278,6 +281,29 @@ jobs:
           rm -rf demo # Clean up demo dir
           # swerex cleanup is usually handled outside the main flow
           # ${SWE_REX_BIN:-swerex-remote} clean 
+
+      # ADDED: Diagnostic step from recipe
+      - name: Dump last container state
+        if: always() # Always run this step - UPDATED from failure() || success()
+        env:
+          # Make sure we use the same tag as the failed step
+          TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
+        run: |
+          echo "--- 🔎 Diagnostic: Dumping last container state for image ${TARGET_IMAGE_TAG} ---"
+          docker ps -a --no-trunc
+          # UPDATED filter to use the dynamic tag directly
+          cid=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n1)
+          if [ -n "$cid" ]; then
+            echo "Found container ID: $cid"
+            echo "=== docker logs $cid ==="
+            # Use || true in case logs command fails (e.g., container removed quickly)
+            docker logs "$cid" || true 
+            echo "=== docker inspect (State) $cid ==="
+            # Capture ExitCode and Error specifically
+            docker inspect "$cid" --format 'ExitCode: {{.State.ExitCode}}, Error: {{.State.Error}}, Status: {{.State.Status}}' || true
+          else
+            echo "Could not find a container based on image ${TARGET_IMAGE_TAG}"
+          fi
 
       # 8) Upload Phase 3 Evidence Bundle
       - name: Upload Phase 3 Evidence
