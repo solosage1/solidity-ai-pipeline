@@ -58,6 +58,10 @@ jobs:
           # Don't install [ai] extras since we're installing SWE-agent directly
           python -m pip install --quiet "${wheel}"
 
+      # Centralize PyYAML install for syntax checking later
+      - name: Install PyYAML
+        run: python -m pip install --quiet pyyaml
+
       # 4a) Install Slither
       - name: Install Slither
         run: python -m pip install --quiet "slither-analyzer>=0.11.3"
@@ -142,6 +146,17 @@ jobs:
           # ------------------------------------------------------------------
           python - <<'PY'
           import importlib.util, pathlib, sys, textwrap, site, os
+
+          # ------------------------------------------------------------------
+          # Create dummy 'enterprise' module to satisfy SWE-agent import
+          # ------------------------------------------------------------------
+          site_pkg = pathlib.Path(site.getsitepackages()[0])
+          for base in (site_pkg, pathlib.Path(site_pkg).parent):
+              ent = base / 'enterprise'
+              ent.mkdir(parents=True, exist_ok=True)
+              init_py = ent / '__init__.py'
+              if not init_py.exists():
+                  init_py.write_text('# placeholder enterprise module')
 
           spec = importlib.util.find_spec("sweagent")
           if spec is None:
@@ -276,8 +291,6 @@ jobs:
           printf '%s\n' "✓ Updated swe.yaml to use image: $TARGET_IMAGE_TAG"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
-          # install PyYAML for YAML parsing
-          python -m pip install --quiet pyyaml
           # parse swe.yaml to catch syntax errors
           python - << 'PY'
           import yaml, sys
@@ -285,9 +298,17 @@ jobs:
               yaml.safe_load(open("swe.yaml"))
               print("✓ swe.yaml valid YAML syntax")
           except Exception as e:
-              print(f"❌ swe.yaml syntax error: {e}")
+              # Provide clearer guidance on syntax errors
+              print("❌ swe.yaml syntax error detected. Please review the file format and indentation.")
+              print(e)
               sys.exit(1)
           PY
+          # Optional YAML debug: only if DEBUG=true
+          if [[ "$DEBUG" == "true" ]]; then
+            echo "--- swe.yaml content preview ---"
+            sed -n '1,50p' swe.yaml
+            echo "---------------------------------"
+          fi
 
           printf '%s\n' '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
