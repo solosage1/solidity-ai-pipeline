@@ -185,23 +185,23 @@ jobs:
           BASE_TAG="foundry_sol:0.4.6"
           ARCH_TAG="${BASE_TAG}-${ARCH}"
 
-          printf '--- Building Phase 3 Docker image\n'
-          printf '      • arch:        %s\n'  "$ARCH"
-          printf '      • base tag:    %s\n'  "$BASE_TAG"
-          printf '      • final tag:   %s\n'  "$ARCH_TAG"
-          printf '      • dockerfile:  %s\n'  "src/solai/docker/foundry_sol.Dockerfile"
+          printf '%s\n' '--- Building Phase 3 Docker image'
+          printf '%s\n' "      • arch:        $ARCH"
+          printf '%s\n' "      • base tag:    $BASE_TAG"
+          printf '%s\n' "      • final tag:   $ARCH_TAG"
+          printf '%s\n' "      • dockerfile:  src/solai/docker/foundry_sol.Dockerfile"
 
           docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" --progress=plain \
             -f src/solai/docker/foundry_sol.Dockerfile .
 
-          printf '--- Docker image build finished ---\n'
+          printf '%s\n' '--- Docker image build finished ---'
 
           if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -Fxq "${ARCH_TAG}"; then
-            printf '❌ Failed to build or tag image %s\n' "$ARCH_TAG"
+            printf '%s\n' "❌ Failed to build or tag image $ARCH_TAG"
             exit 1
           fi
 
-          printf '✓ Image %s built successfully.\n' "$ARCH_TAG"
+          printf '%s\n' "✓ Image $ARCH_TAG built successfully."
           echo "image_tag=${ARCH_TAG}" >> "$GITHUB_OUTPUT"
 
       # 7) Run Phase 3 Hello-World Test
@@ -213,7 +213,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          printf '--- 1️⃣ Creating isolated failing demo repo ---\n'
+          printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
           git init -q
 
@@ -243,31 +243,31 @@ jobs:
           SOLTEST
 
           if forge test -q; then
-            printf '❌ tests unexpectedly green\n'
+            printf '%s\n' '❌ tests unexpectedly green'
             exit 1
           else
-            printf '✓ baseline red\n'
+            printf '%s\n' '✓ baseline red'
           fi
 
           if ! grep -q '"HELLO"' Greeter.t.sol; then
-            printf '❌ HELLO literal missing\n'
+            printf '%s\n' '❌ HELLO literal missing'
             exit 1
           fi
-          printf '✓ Checkpoint 1 Passed\n'
+          printf '%s\n' '✓ Checkpoint 1 Passed'
 
-          printf '--- 2️⃣ Authoring minimal swe.yaml ---\n'
+          printf '%s\n' '--- 2️⃣ Authoring minimal swe.yaml ---'
           cp "${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml" swe.yaml
           sed -i "s|DYNAMIC_IMAGE_TAG_PLACEOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
-          printf '✓ Updated swe.yaml to use image: %s\n' "$TARGET_IMAGE_TAG"
+          printf '%s\n' "✓ Updated swe.yaml to use image: $TARGET_IMAGE_TAG"
 
-          printf '--- 2b️⃣ Linting swe.yaml config ---\n'
+          printf '%s\n' '--- 2b️⃣ Linting swe.yaml config ---'
           if ! sweagent lint-config swe.yaml; then
-            printf '❌ swe.yaml validation failed\n'
+            printf '%s\n' '❌ swe.yaml validation failed'
             exit 1
           fi
-          printf '✓ swe.yaml valid\n'
+          printf '%s\n' '✓ swe.yaml valid'
 
-          printf '--- 3️⃣ Running SHE-Agent inside SWE-ReX ---\n'
+          printf '%s\n' '--- 3️⃣ Running SHE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
 
@@ -276,53 +276,53 @@ jobs:
           ret=$?
           set -e
 
-          printf '--- 🩺 Exit Code: %s\n' "$ret"
+          printf '%s\n' "--- 🩺 Exit Code: $ret"
 
-          printf '--- 🪵 Capturing container logs ---\n'
+          printf '%s\n' '--- 🪵 Capturing container logs ---'
           CID=$(grep -oP 'Starting container \K[^ ]+' "$LOGFILE" | head -n1)
           if [ -n "$CID" ]; then
             docker logs "$CID" || true
           fi
 
           if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
-            printf '❌ SWE-Agent run failed or patch missing\n'
+            printf '%s\n' '❌ SWE-Agent run failed or patch missing'
             exit 1
           fi
 
-          printf '✓ Agent produced patch.tar\n'
-          printf '--- 4️⃣ Applying patch... ---\n'
+          printf '%s\n' '✓ Agent produced patch.tar'
+          printf '%s\n' '--- 4️⃣ Applying patch... ---'
           tar -xf patch.tar
           mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][f|t]?' -print0)
 
           if [ "${#patch_files[@]}" -eq 0 ]; then
-            printf '❌ No patch files\n'
+            printf '%s\n' '❌ No patch files'
             exit 1
           fi
 
           for p in "${patch_files[@]}"; do
             [ -z "$p" ] && continue
-            printf '→ validating %s\n' "$p"
+            printf '%s\n' "→ validating $p"
             size=$(stat -c%s "$p")
-            [ "$size" -lt 100000 ] || { printf '💥 %s too large\n' "$p"; exit 1; }
+            [ "$size" -lt 100000 ] || { printf '%s\n' "💥 $p too large"; exit 1; }
 
             git apply --stat "$p" > stat.txt
             loc_ins=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s}')
             loc_del=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s}')
             total=$((loc_ins+loc_del))
-            [ "$total" -le 2000 ] || { printf '💥 patch %s changes %s LOC\n' "$p" "$total"; exit 1; }
+            [ "$total" -le 2000 ] || { printf '%s\n' "💥 patch $p changes $total LOC"; exit 1; }
 
-            printf 'Applying %s\n' "$p"
-            git apply "$p" || { printf '❌ apply failed %s\n' "$p"; exit 1; }
+            printf '%s\n' "Applying $p"
+            git apply "$p" || { printf '%s\n' "❌ apply failed $p"; exit 1; }
           done
 
           if forge test -q; then
-            printf '✓ tests green after patch\n'
+            printf '%s\n' '✓ tests green after patch'
           else
-            printf '❌ tests still failing\n'
+            printf '%s\n' '❌ tests still failing'
             exit 1
           fi
 
-          printf '--- 5️⃣ Bundling evidence ---\n'
+          printf '%s\n' '--- 5️⃣ Bundling evidence ---'
           mkdir -p .evidence
           # Handle potential missing slither.txt gracefully
           [ -f stat.txt ] && mv stat.txt .evidence/
@@ -333,7 +333,7 @@ jobs:
           # Move bundle to /tmp for upload
           mv "$TB" /tmp/
           echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
-          printf '✅ Evidence: %s\n' "$TB"
+          printf '%s\n' "✅ Evidence: $TB"
 
       # 8) Upload Phase 3 Evidence Bundle
       - name: Upload Phase 3 Evidence
