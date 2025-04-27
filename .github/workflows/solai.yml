@@ -56,8 +56,8 @@ jobs:
           set -e
           echo "--- Running pip-compile consistency pre-check (filtering comments/via, trimming whitespace, sorting) ---"
           # Compare sorted, filtered output of normal run vs. dry run
-          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) \\
-                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) || \\
+          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) \
+                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) || \
             (echo "Error: pip-compile resolution inconsistency detected. Outputs differ even after filtering, trimming, and sorting." && exit 1)
           echo "--- Consistency check passed ---"
 
