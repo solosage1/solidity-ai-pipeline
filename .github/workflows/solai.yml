@@ -111,6 +111,7 @@ jobs:
 
       # Debug: Post Docker PATH
       - name: Debug - Post Docker PATH
+        if: env.DEBUG == 'true'
         run: |
           echo "PATH after Docker setup: $PATH"
           cat "$GITHUB_PATH"
@@ -224,6 +225,9 @@ jobs:
         shell: sudo -E bash {0}
         run: |
           set -e
+          # Ensure root can see Foundry, user-site, and system-site CLIs
+          export PATH="$FOUNDRY_DIR/bin:$(python3 -m site --user-base)/bin:$(python3 -c 'import site,sys;print(site.getsitepackages()[0] + "/bin")'):$PATH"
+
           printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
           git init -q
@@ -323,11 +327,6 @@ jobs:
             printf '%s\n' "--- 2c️⃣ Skipping schema validation (--dry-run not supported) ---"
           fi
 
-          # ──────────────────────────────────────────────────────────────────
-          # Ensure pip-installed CLI is on root's PATH before running the agent
-          SITE_BIN_PATH=$(python3 -c 'import site, sys; sys.stdout.write(site.getsitepackages()[0] + "/bin")')
-          export PATH="$SITE_BIN_PATH:$PATH"
-          
           printf '%s\n' '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
