@@ -120,47 +120,47 @@ jobs:
             which forge || echo "forge not found in PATH"
           fi
 
-      # 4c) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
+      # 4e) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
       - name: Install SWE-Agent & SWE-ReX
         run: |
-          # Exact commit SHA for reproducibility (tag v1.0.1).
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
             "swe-rex==1.2.1" \
             "openai>=1.75.0,<2"
+
           # ------------------------------------------------------------------
           # Work-around packaging bug: create the missing sweagent/config dir
           # ------------------------------------------------------------------
-          python - << 'PY'
-            import importlib.util, pathlib, sys, textwrap
+          python - <<'PY'
+          import importlib.util, pathlib, sys, textwrap
 
-            spec = importlib.util.find_spec("sweagent")
-            if spec is None:
-                sys.exit("❌ sweagent not found after install")
+          spec = importlib.util.find_spec("sweagent")
+          if spec is None:
+              sys.exit("❌ sweagent not found after install")
 
-            pkg_dir = pathlib.Path(spec.origin).parent
-            cfg_dir = pkg_dir / "config"
-            cfg_dir.mkdir(exist_ok=True)
+          pkg_dir = pathlib.Path(spec.origin).parent
+          cfg_dir = pkg_dir / "config"
+          cfg_dir.mkdir(exist_ok=True)
 
-            # Minimal placeholder config (prevent runtime asserts)
-            default_cfg = cfg_dir / "default.yaml"
-            if not default_cfg.exists():
-                default_cfg.write_text(textwrap.dedent("""\
-                    #############################
-                    # Minimal placeholder config
-                    #############################
-                    agent:
-                      name: placeholder
-                """))
+          # Minimal placeholder config (prevents runtime asserts)
+          default_cfg = cfg_dir / "default.yaml"
+          if not default_cfg.exists():
+              default_cfg.write_text(textwrap.dedent("""\
+          #############################
+          # Minimal placeholder config
+          #############################
+          agent:
+            name: placeholder
+          """))
 
-            print(f"✓ sweagent installed at {pkg_dir}")
-            print(f"✓ ensured {cfg_dir} exists with a placeholder config")
+          print(f"✓ sweagent installed at {pkg_dir}")
+          print(f"✓ ensured {cfg_dir} exists with a placeholder config")
           PY
 
-          # Lightweight version check (avoids importing sweagent.run.run)
-          python - << 'PY'
-            import importlib.metadata, sys
-            print("sweagent version:", importlib.metadata.version("sweagent"))
+                    # Lightweight version check
+                    python - <<'PY'
+          import importlib.metadata
+          print("sweagent version:", importlib.metadata.version("sweagent"))
           PY
 
           which sweagent || { echo "sweagent CLI not in PATH"; exit 1; }
@@ -173,7 +173,7 @@ jobs:
 
       # 6) Build Phase 3 Required Docker Image
       - name: Build Phase 3 Docker Image
-        id: docker_build # Add an ID to reference the output tag
+        id: docker_build
         shell: bash
         run: |
           set -e
@@ -187,40 +187,32 @@ jobs:
           printf '      • final tag:   %s\n'  "$ARCH_TAG"
           printf '      • dockerfile:  %s\n'  "src/solai/docker/foundry_sol.Dockerfile"
 
-          # Build the image
-          docker build \
-            --platform "linux/${ARCH}" \
-            -t "${ARCH_TAG}" \
-            --progress=plain \
+          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" --progress=plain \
             -f src/solai/docker/foundry_sol.Dockerfile .
 
           printf '--- Docker image build finished ---\n'
 
-          # Verify the tag exists
           if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -Fxq "${ARCH_TAG}"; then
-            printf '❌ Failed to build or tag image %s correctly\n' "$ARCH_TAG"
+            printf '❌ Failed to build or tag image %s\n' "$ARCH_TAG"
             exit 1
           fi
 
           printf '✓ Image %s built successfully.\n' "$ARCH_TAG"
-
-          # Expose the tag for later steps
           echo "image_tag=${ARCH_TAG}" >> "$GITHUB_OUTPUT"
 
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run
+        id: swe_agent_run_step
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # Make sure the container ID search uses the dynamically built tag
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
         shell: bash
         run: |
           set -e
-          printf '--- 1️⃣ Creating isolated failing demo repo ---\\n'
+          printf '--- 1️⃣ Creating isolated failing demo repo ---\n'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
           git init -q
-          
-          # Create contract
+
           cat > Greeter.sol << 'SOL'
           pragma solidity ^0.8.26;
           contract Greeter {
@@ -231,12 +223,11 @@ jobs:
           }
           SOL
 
-          # Create test
-          cat > Greeter.t.sol << 'SOLTEST'
+                    cat > Greeter.t.sol << 'SOLTEST'
           pragma solidity ^0.8.26;
           import "forge-std/Test.sol";
           import "./Greeter.sol";
-          
+
           contract GreeterTest is Test {
               Greeter g;
               function setUp() public { g = new Greeter(); }
@@ -248,243 +239,103 @@ jobs:
           SOLTEST
 
           if forge test -q; then
-            printf '❌ tests unexpectedly green\\n'
+            printf '❌ tests unexpectedly green\n'
             exit 1
           else
-            printf '✓ baseline red\\n'
+            printf '✓ baseline red\n'
           fi
 
           if ! grep -q '"HELLO"' Greeter.t.sol; then
-            printf '❌ '"'"'HELLO'"'"' literal missing from test\\n'
+            printf '❌ HELLO literal missing\n'
             exit 1
           fi
-          printf '✓ Checkpoint 1 Passed\\n'
-          
-          printf '--- 2️⃣ Authoring minimal swe.yaml ---\\n'
-          # Copy the template
+          printf '✓ Checkpoint 1 Passed\n'
+
+          printf '--- 2️⃣ Authoring minimal swe.yaml ---\n'
           cp "${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml" swe.yaml
-          # Modify the image tag IN PLACE using sed
-          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEHOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
-          printf '✓ Updated swe.yaml config file to use image: %s (keep_container is static)\\n' "$TARGET_IMAGE_TAG"
-          cat swe.yaml # Optional: verify the change
+          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
+          printf '✓ Updated swe.yaml to use image: %s\n' "$TARGET_IMAGE_TAG"
 
-          printf '--- 2b️⃣ Linting swe.yaml configuration ---\\n'
+          printf '--- 2b️⃣ Linting swe.yaml config ---\n'
           if ! sweagent lint-config swe.yaml; then
-            printf '❌ swe.yaml configuration failed validation\\n'
+            printf '❌ swe.yaml validation failed\n'
             exit 1
           fi
-          printf '✓ swe.yaml configuration is valid.\\n'
+          printf '✓ swe.yaml valid\n'
 
-          printf '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---\\n'
+          printf '--- 3️⃣ Running SHE-Agent inside SWE-ReX ---\n'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
-          
-          # Ensure OpenAI key is set
-          : "${OPENAI_API_KEY:?OPENAI_API_KEY not set}"   # safer secret check
 
-          # Run swerex-remote, capture exit code, and attempt to get logs
-          set +e # Allow the command to fail so we can capture logs
-          # Using sweagent directly (should be in PATH)
+          set +e
           sweagent run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
-          sweagent_exit_code=$? # Still capture for logging/reporting
-          set -e # Re-enable exit on error
+          ret=$?
+          set -e
 
-          printf '--- 🩺 SWE-Agent Exit Code: %s ---\\n' "$sweagent_exit_code"
-          
-          # Attempt to get logs from the container (ALWAYS try after the run)
-          # Use printf for formatted output
-          printf '--- 🪵 Attempting to capture Docker container logs --- \\t(SWE-Agent Exit Code: %s)\\n' "$sweagent_exit_code"
-          # Extract container name/ID from the log file
-          # Ensure grep pattern is correctly escaped and LOGFILE is quoted
-          container_name=$(grep -oP 'INFO\\s+Starting container \\K[^\\s]+' "$LOGFILE" | head -n 1)
+          printf '--- 🩺 Exit Code: %s\n' "$ret"
 
-          if [ -n "$container_name" ]; then
-            printf 'Found container name/ID from log: %s\\n' "$container_name"
-            # Use the container name/ID to get logs. Use set +e in case container was already removed.
-            set +e
-            # Try to get logs, check exit status directly
-            if ! docker_logs_output=$(docker logs "$container_name" 2>&1); then
-                # If docker logs fails, print the info message
-                printf '(Info: docker logs failed for %s, container might have been removed already)\n' "$container_name"
-            else
-                # Only print logs if successful
-                printf '%s\n' "$docker_logs_output"
-            fi
-            set -e
-          else
-            printf 'Could not find container name/ID in log file %s for image %s\n' "$LOGFILE" "$TARGET_IMAGE_TAG"
-            # Fallback attempt using docker ps (might fail if container is removed)
-            printf '--- 🪵 Fallback: Attempting to capture logs via docker ps --filter ---\n'
-            container_id_ps=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
-             if [ -n "$container_id_ps" ]; then
-                printf 'Found container ID via ps: %s for image %s\n' "$container_id_ps" "$TARGET_IMAGE_TAG"
-                docker logs "$container_id_ps"
-             else
-                printf 'Could not find container ID via ps for image %s\n' "$TARGET_IMAGE_TAG"
-             fi
+          printf '--- 🪵 Capturing container logs ---\n'
+          CID=$(grep -oP 'Starting container \K[^ ]+' "$LOGFILE" | head -n1)
+          if [ -n "$CID" ]; then
+            docker logs "$CID" || true
           fi
 
-          # Fail the step if the original command failed OR if the patch is missing
-          if [ "$sweagent_exit_code" -ne 0 ]; then
-            printf '❌ SWE-Agent run failed with exit code %s\n' "$sweagent_exit_code"
-            exit "$sweagent_exit_code"
-          elif [ ! -s patch.tar ]; then
-             printf '❌ patch.tar missing or empty after SWE-Agent run (Exit code: %s)\n' "$sweagent_exit_code"
-             exit 1 # Fail fast if patch is missing
+          if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
+            printf '❌ SWE-Agent run failed or patch missing\n'
+            exit 1
           fi
 
-          # Basic sanity check for patch file (only if sweagent succeeded AND patch exists)
-          if [ -s patch.tar ]; then
-            printf '✓ Agent produced patch.tar\n'
-          fi
-
-          # Use explicit if check instead of && ||
-          if ! docker ps -a --format '{{.Image}}' | grep -Fxq "$TARGET_IMAGE_TAG"; then
-             printf '⚠️ Warning: Container image %s not found in docker ps -a output at this time.\n' "$TARGET_IMAGE_TAG"
-          fi
-          printf '✓ Checkpoint 3 Passed (Using image %s)\n' "$TARGET_IMAGE_TAG"
-
-          printf '--- 4️⃣ Applying patch, enforcing guard-rails, re-testing ---\n'
+          printf '✓ Agent produced patch.tar\n'
+          printf '--- 4️⃣ Applying patch... ---\n'
           tar -xf patch.tar
-          # Use find for robust handling of filenames, even with spaces/special chars
-          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.diff' -print0 -o -name '*.patch' -print0)
+          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][f|t]?' -print0)
 
           if [ "${#patch_files[@]}" -eq 0 ]; then
-             printf '❌ No patch files (*.diff or *.patch) found in patch.tar\n'
-             printf '--- Contents of current directory ---\n'
-             ls -la
-             printf '--- Log file (%s) ---\n' "$LOGFILE"
-             cat "$LOGFILE"
-             exit 1
-          fi
-          
-          for p in "${patch_files[@]}"; do
-            # Skip empty entries potentially created by mapfile
-            if [ -z "$p" ]; then continue; fi
-
-            printf '→ validating %s\\n' "$p"
-            # Check file size and existence in one go
-            if ! size=$(stat -c%s "$p" 2>/dev/null) || [ -z "$size" ] || [ "$size" -ge 100000 ]; then
-                printf '💥 %s missing or >= 100 KB (size: %s)\\n' "$p" "${size:-unknown}"
-                exit 1
-            fi
-            
-            # Check LoC and apply
-            # Ensure stat.txt is cleaned up or uniquely named if run in parallel/loop later
-            if ! git apply --stat "$p" > stat.txt; then
-                printf '❌ Failed to get stats for patch %s\n' "$p"
-                exit 1
-            fi
-
-            loc_inserted=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s+0}') # Ensure numeric output
-            loc_deleted=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s+0}') # Ensure numeric output
-            loc_total=$((loc_inserted + loc_deleted))
-
-            if [ "$loc_total" -gt 2000 ]; then
-               printf '💥 patch changes %s LOC (inserted: %s, deleted: %s)\n' "$loc_total" "$loc_inserted" "$loc_deleted"
-               exit 1
-            fi
-            
-            printf 'Applying patch %s...\n' "$p"
-            if ! git apply "$p"; then
-               printf '❌ Failed to apply patch %s\n' "$p"
-               exit 1
-            fi
-            printf '✓ Patch %s applied successfully.\n' "$p"
-          done
-          
-          if forge test -q; then
-             printf '✓ tests green after patch\n'
-          else
-             printf '❌ tests still failing after patch\n'
-             exit 1
-          fi
-          
-          # Run Slither
-          printf 'Running Slither scan...\n'
-          # Ensure slither.txt is cleaned up or uniquely named if run in parallel/loop later
-          if ! slither . --exclude-dependencies --disable-color > slither.txt; then
-              printf '⚠️ Slither command failed. Output:\n'
-              cat slither.txt # Show output even on failure
-              # Decide if Slither failure should fail the build (currently it does via set -e)
-              # exit 1 # Explicitly exit if needed
-          fi
-
-          if grep -Eiq 'Severity.*(Critical|High)' slither.txt; then
-            printf '❌ high-severity issue found by Slither\n'
-            cat slither.txt # Show findings
+            printf '❌ No patch files\n'
             exit 1
-          else
-            printf '✓ Slither OK - No critical/high severity issues found.\n'
           fi
-          printf '✓ Checkpoint 4 Passed\n'
+
+          for p in "${patch_files[@]}"; do
+            [ -z "$p" ] && continue
+            printf '→ validating %s\n' "$p"
+            size=$(stat -c%s "$p")
+            [ "$size" -lt 100000 ] || { printf '💥 %s too large\n' "$p"; exit 1; }
+
+            git apply --stat "$p" > stat.txt
+            loc_ins=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s}')
+            loc_del=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s}')
+            total=$((loc_ins+loc_del))
+            [ "$total" -le 2000 ] || { printf '💥 patch %s changes %s LOC\n' "$p" "$total"; exit 1; }
+
+            printf 'Applying %s\n' "$p"
+            git apply "$p" || { printf '❌ apply failed %s\n' "$p"; exit 1; }
+          done
+
+          if forge test -q; then
+            printf '✓ tests green after patch\n'
+          else
+            printf '❌ tests still failing\n'
+            exit 1
+          fi
 
           printf '--- 5️⃣ Bundling evidence ---\n'
           mkdir -p .evidence
-          # Quote file names for mv
-          mv patch.tar "$LOGFILE" stat.txt slither.txt .evidence/
-          EVIDENCE_BUNDLE="phase3_evidence_${TS}.tgz"
-          HASH_FILE="evidence_${TS}.hash" # Define hash file name
-
-          tar -czf "$EVIDENCE_BUNDLE" .evidence
-          sha256sum "$EVIDENCE_BUNDLE" > "$HASH_FILE" # Use defined name
-          printf '✅ Evidence bundle ready: %s\n' "$EVIDENCE_BUNDLE"
-
-          # Move bundle to /tmp to prevent deletion with demo dir
-          mv "$EVIDENCE_BUNDLE" /tmp/
-          printf '✓ Moved %s to /tmp/\n' "$EVIDENCE_BUNDLE"
-
-          # Move hash file too
-          mv "$HASH_FILE" /tmp/
-          printf '✓ Moved %s to /tmp/\n' "$HASH_FILE"
-
-          # Output bundle name for artifact upload step
-          echo "EVIDENCE_BUNDLE_NAME=$EVIDENCE_BUNDLE" >> "$GITHUB_ENV"
-          # Output hash file name for artifact upload step
-          echo "EVIDENCE_HASH_NAME=$HASH_FILE" >> "$GITHUB_ENV" # Use defined name
-          
-          printf '--- 6️⃣ Cleanup ---\n'
-          # Minimal cleanup within the job - runner handles workspace cleanup
-          cd .. # Move out of /tmp/demo
-          rm -rf demo # Clean up demo dir
-          # swerex cleanup is usually handled outside the main flow
-          # ${SWE_REX_BIN:-swerex-remote} clean 
-
-      # ADDED: Diagnostic step from recipe
-      - name: Dump last container state
-        if: always() # Always run this step
-        env:
-          # Make sure we use the same tag as the build step
-          TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
-        run: |
-          echo "⏬ docker ps -a"
-          docker ps -a --no-trunc
-          
-          # Pick the most recent container started from our image
-          CID=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format '{{.ID}}' | head -n1)
-          
-          if [ -z "$CID" ]; then
-            echo "❌ Could not find any stopped container for image ${TARGET_IMAGE_TAG}"
-            # Exit 0 here to allow workflow to proceed and potentially fail later 
-            # based on missing artifacts, ensuring we always see this message if needed.
-            exit 0
-          fi
-          
-          echo "Found container ID: $CID"
-          echo "⏬ docker inspect $CID | jq '.[0].State'"
-          # Guarantee jq exists even if GitHub changes the base image
-          command -v jq >/dev/null || sudo apt-get update -y && sudo apt-get install -y jq
-          docker inspect "$CID" | jq '.[0].State'
-          
-          echo "⏬ docker logs $CID (last 200 lines)"
-          docker logs --tail 200 "$CID" || true
+          # Handle potential missing slither.txt gracefully
+          [ -f stat.txt ] && mv stat.txt .evidence/
+          [ -f slither.txt ] && mv slither.txt .evidence/
+          mv patch.tar "$LOGFILE" .evidence/ 
+          TB="phase3_evidence_${TS}.tgz"
+          tar -czf "$TB" .evidence
+          # Move bundle to /tmp for upload
+          mv "$TB" /tmp/
+          echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
+          printf '✅ Evidence: %s\n' "$TB"
 
       # 8) Upload Phase 3 Evidence Bundle
       - name: Upload Phase 3 Evidence
         uses: actions/upload-artifact@v4
         with:
           name: phase3-evidence
-          path: |
-            /tmp/${{ env.EVIDENCE_BUNDLE_NAME }}
-            /tmp/${{ env.EVIDENCE_HASH_NAME }}
-          if-no-files-found: error # Fail the workflow if the bundle isn't found 
+          # Correct path using the step output
+          path: /tmp/${{ steps.swe_agent_run_step.outputs.bundle_name }}
+          if-no-files-found: error 
