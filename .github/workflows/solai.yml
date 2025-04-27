@@ -177,10 +177,7 @@ jobs:
 
           # Run swerex-remote
           # Use SWE_REX_BIN env var if defined, otherwise use sweagent directly
-          echo "Running sweagent run --help to check arguments..."
-          sweagent run --help || echo "sweagent run --help failed"
-          echo "Attempting sweagent run..."
-          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output-tar patch.tar \
+          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . \
             2>&1 | tee "$LOGFILE"
           
           # Basic sanity check for patch file
