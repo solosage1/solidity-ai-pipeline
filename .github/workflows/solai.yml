@@ -314,28 +314,27 @@ jobs:
           printf '%s\n' '✓ Checkpoint 1 Passed'
 
           printf '%s\n' '--- 2️⃣ Creating minimal valid swe.yaml ---'
-          # Instead of copying directly, we'll create the file with only valid fields
           cat > swe.yaml << YAML
           problem_statement:
             text: "Fix failing tests"
 
-          agent:
-            model:
-              name: gpt-4o-mini
-              per_instance_cost_limit: 0.20  # Correct field name for SWE-Agent v1.0.1
-            action_sampler: {}
+            agent:
+              model:
+                name: gpt-4o-mini
+                per_instance_cost_limit: 0.20  # Correct field per SWE-Agent v1.0.1
+              action_sampler: {}
 
-          env:
-            repo:
-              path: .
-            deployment:
-              type: local
-              local:
-                sandbox_dir: .   # write into workspace instead of "/demo"
+            env:
+              repo:
+                path: .
+              deployment:
+                type: local
+                local:
+                  sandbox_dir: .    # write into workspace instead of "/demo"
 
-          actions:
-            open_pr: false
-            apply_patch_locally: true
+            actions:
+              open_pr: false
+              apply_patch_locally: true
           YAML
 
           printf '%s\n' "✓ Created swe.yaml for local deployment with sandbox_dir set to workspace"
