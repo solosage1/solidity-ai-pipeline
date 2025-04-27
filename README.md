@@ -2,9 +2,18 @@
 
 [![CI](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml)
 
-> **Plug-and-play pipeline to automatically diagnose & fix failing Solidity tests with GPT-4o-mini, Foundry & Slither.**
+Experimental framework for running AI agents (like SWE-Agent) against Solidity codebases,
+particularly Foundry projects.
 
----
+## CI status
+![phase-3 workflow](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
+
+## Run Phase-3 locally
+
+```bash
+export OPENAI_API_KEY=sk-…      # or use direnv
+./ci/phase3.sh                  # takes ≈ 2-3 min
+```
 
 ## ✨ Features
 

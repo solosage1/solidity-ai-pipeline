@@ -120,13 +120,26 @@ for p in "${patch_files[@]}"; do
   TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
 
   echo "--- Applying patch file: $p ---"
-  git apply "$p" || { echo "❌ Applying patch $p failed"; exit 1; }
+  git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
   echo "  ✓ Applied successfully"
 done
 
 # Add summary to GitHub Step Summary
-echo '### Phase 3 Summary' >> $GITHUB_STEP_SUMMARY
-echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL" >> $GITHUB_STEP_SUMMARY
+echo '### Phase 3 Summary' >> "$GITHUB_STEP_SUMMARY"
+TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
+TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
+
+echo "--- Applying patch file: $p ---"
+git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
+echo "  ✓ Applied successfully"
+done
+
+# Add summary to GitHub Step Summary
+COST_LINE=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || true)
+{
+echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
+[ -n "$COST_LINE" ] && echo "- Estimated Cost: $$COST_LINE"
+} >> "$GITHUB_STEP_SUMMARY"
 
 forge test -q || { echo "❌ tests still failing after applying patch(es)"; git diff; exit 1; }
 echo "✓ tests green after patch"
@@ -137,8 +150,10 @@ docker pull "$SLITHER_IMG" || true
 
 # 5️⃣ Run Slither inside container
 echo "--- Running Slither ---"
-docker run --rm -v "$PWD":/src "$SLITHER_IMG" slither /src \
-    --exclude-dependencies --disable-color > slither.txt || true
+# never re-pull if cached layer is present
+docker run --pull=never --rm -v "$PWD":/src "$SLITHER_IMG" \
+    slither /src --exclude-dependencies --disable-color > slither.txt || \
+    echo "Slither exited non-zero → continuing"
 echo "✓ Slither analysis complete"
 
 # 6️⃣ Bundle evidence
@@ -150,7 +165,8 @@ tar -czf "$TB" .evidence
 echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
 
 # Extract cost for summary
-COST=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || echo "N/A")
-echo "- **Estimated Cost:** $$COST" >> $GITHUB_STEP_SUMMARY
+# COST is now handled inline above when writing to GITHUB_STEP_SUMMARY
+# COST=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || echo "N/A")
+# echo "- **Estimated Cost:** $$COST" >> "$GITHUB_STEP_SUMMARY"
 
 echo "✅ Phase 3 complete" 

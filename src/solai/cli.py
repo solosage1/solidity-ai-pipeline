@@ -1,5 +1,7 @@
+import shutil
 from pathlib import Path
-import importlib.resources as pkg, yaml
+import importlib.resources as pkg
+import yaml
 import typer
 from solai.runner import run_backlog, doctor as run_doctor
 
@@ -38,7 +40,9 @@ def init(
     # ---- placeholder digest warning ------------------------------------
     cfg = Path(".solai.yaml")
     if cfg.exists():
-        docker_image = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+        docker_image = yaml.safe_load(
+            cfg.read_text(), Loader=yaml.SafeLoader
+        )["env"]["docker_image"]
         if "placeholder_digest" in docker_image:
             typer.secho(
                 "⚠  .solai.yaml still has placeholder_digest — "

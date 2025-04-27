@@ -45,12 +45,14 @@ jobs:
 
       - name: Lint Python code with Ruff
         uses: chartboost/ruff-action@v1
+        with:
+          args: "check ."          # fail on error, same Py 3.12 env
 
       - name: Lint shell scripts with ShellCheck
         uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: ci
-          severity: error # Fail build on warnings
+          severity: error          # fail build on any error
 
       - name: Install and run tests
         run: |
