@@ -19,11 +19,21 @@ jobs:
   phase3_hello_world:
     needs: lint-workflow
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       # Define FOUNDRY_DIR at job level for use in cache and install steps
       FOUNDRY_DIR: /home/runner/.config/.foundry
 
     steps:
+      # → Cache Python deps
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-py3.12
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-
+            ${{ runner.os }}-pip-
+
       # 1) Grab your code
       - uses: actions/checkout@v4
 
@@ -32,6 +42,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Export runner's interpreter path for root
+      - name: Export PYBIN_DIR
+        run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> $GITHUB_ENV
+
       # Upgrade pip once at the beginning
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
@@ -54,10 +68,6 @@ jobs:
       # Centralize PyYAML install for syntax checking later
       - name: Install PyYAML
         run: python -m pip install --quiet pyyaml
-
-      # 4a) Install Slither
-      - name: Install Slither
-        run: python -m pip install --quiet "slither-analyzer>=0.11.3"
 
       # -------------------------------------------------------------
       # 4b) Determine latest Foundry version (does NOT need Foundry)
@@ -122,117 +132,42 @@ jobs:
             which forge || echo "forge not found in PATH"
           fi
 
-      # 4e) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
+      # 4e) Install SWE-Agent & SWE-ReX
       - name: Install SWE-Agent & SWE-ReX
         run: |
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
             "swe-rex==1.2.1" \
-            "openai>=1.75.0,<2"
+            "openai==1.76.0"  # pin exact patch release for determinism
 
-          # ------------------------------------------------------------------
-          # Combined work-around: create config, tools & trajectories dirs; optional debug
-          # ------------------------------------------------------------------
-          python - <<'PY'
-          import importlib.util, pathlib, sys, textwrap, site, os
+          # Quick import smoke-test
+          python -c 'import sweagent; print("import ok:", sweagent.__version__)'
 
-          # ------------------------------------------------------------------
-          # Stub out missing 'enterprise' package and 'enterprise_hooks.session_handler'
-          # ------------------------------------------------------------------
-          site_pkg = pathlib.Path(site.getsitepackages()[0])
-          for base in (site_pkg, pathlib.Path(site_pkg).parent):
-              # Create root 'enterprise' package
-              ent = base / 'enterprise'
-              ent.mkdir(parents=True, exist_ok=True)
-              init_py = ent / '__init__.py'
-              if not init_py.exists():
-                  init_py.write_text('# stub enterprise package')
+          # Create stubs & minimal config
+          python scripts/setup_stub_pkgs.py
+          # Fail if helper missing
+          test -f scripts/setup_stub_pkgs.py || (echo "scripts/setup_stub_pkgs.py missing"; exit 1)
 
-              # Create 'enterprise_hooks' subpackage
-              eh = ent / 'enterprise_hooks'
-              eh.mkdir(parents=True, exist_ok=True)
-              hook_init = eh / '__init__.py'
-              if not hook_init.exists():
-                  hook_init.write_text('# stub enterprise_hooks package')
-
-              # Create 'session_handler' module with stub classes
-              sh = eh / 'session_handler.py'
-              if not sh.exists():
-                  sh.write_text(
-                      "class SessionHandler:\n"
-                      "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler\"\"\"\n"
-                      "    def __init__(self, *args, **kwargs):\n"
-                      "        pass\n"
-                      "\n"
-                      "class ChatCompletionSession:\n"
-                      "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler.ChatCompletionSession\"\"\"\n"
-                      "    def __init__(self, *args, **kwargs):\n"
-                      "        pass\n"
-                      "\n"
-                      "class _ENTERPRISE_ResponsesSessionHandler:\n"
-                      "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler._ENTERPRISE_ResponsesSessionHandler\"\"\"\n"
-                      "    def __init__(self, *args, **kwargs):\n"
-                      "        pass\n"
-                  )
-
-          spec = importlib.util.find_spec("sweagent")
-          if spec is None:
-              sys.exit("❌ sweagent not found after install")
-
-          pkg_dir = pathlib.Path(spec.origin).parent
-          site_pkg = pathlib.Path(site.getsitepackages()[0])
-
-          # Create config, tools, and trajectories directories
-          for base in [pkg_dir, site_pkg]:
-              for sub in ("config", "tools", "trajectories"):
-                  d = base / sub
-                  d.mkdir(parents=True, exist_ok=True)
-                  if sub == "config":
-                      cfg = d / "default.yaml"
-                      if not cfg.exists():
-                          cfg.write_text(textwrap.dedent("""\
-          #############################
-          # Minimal placeholder config
-          #############################
-          agent:
-            name: placeholder
-          """))
-
-          # Optional debug output
-          if os.getenv("DEBUG", "").lower() in ("1", "true"):
-              print(f"sweagent pkg_dir: {pkg_dir}")
-              print(f"site-packages base: {site_pkg}")
-              for path in (
-                  pkg_dir / "config",
-                  site_pkg / "config",
-                  pkg_dir.parent / "tools",
-                  site_pkg / "tools",
-                  pkg_dir.parent / "trajectories",
-                  site_pkg / "trajectories",
-              ):
-                  print(f"- {path}: {'exists' if path.exists() else 'missing'}")
-          PY
-
-          which sweagent || { echo "sweagent CLI not in PATH"; exit 1; }
+          which sweagent || { echo "❌ sweagent CLI not in PATH"; exit 1; }
 
       # 7) Run Phase 3 Hello-World Test
-      - name: Phase 3 - SWE-Agent Run
+      - name: Phase 3 - SWE-Agent Run  # single sudo, stripped user-site path
         id: swe_agent_run_step
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        shell: sudo -E bash {0}
+          PYBIN_DIR: ${{ env.PYBIN_DIR }}
+        shell: sudo -E env "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" bash {0}
         run: |
-          set -e
-          # ── locate the runner's python-script directory *inside root* ──
-          RUNNER_PYBIN_DIR=$(python3 -c \
-              'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')
-          # Foundry  ▸ runner python bin ▸ rest of PATH
-          export PATH="$FOUNDRY_DIR/bin:${RUNNER_PYBIN_DIR}:$PATH"
+          set -euo pipefail
+          # Foundry ▸ recorded python-bin ▸ rest
+          export PATH="$FOUNDRY_DIR/bin:${PYBIN_DIR}:$PATH"
 
           # Early check that sweagent is visible to root
           which sweagent || { echo "❌ sweagent not found in root PATH"; exit 1; }
 
-          printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
+          # Mini smoke-test (catches import errors sooner)
+          sweagent --version
+
+          # 1️⃣ Create isolated failing demo repo
           cd /tmp && rm -rf demo && mkdir demo && cd demo
           git init -q
 
@@ -393,7 +328,7 @@ jobs:
           mkdir -p .evidence
           # Handle potential missing slither.txt gracefully
           [ -f stat.txt ] && mv stat.txt .evidence/
-          [ -f slither.txt ] && mv slither.txt .evidence/
+          # slither.txt only if actually generated
           mv patch.tar "$LOGFILE" .evidence/
           TB="phase3_evidence_${TS}.tgz"
           tar -czf "$TB" .evidence
