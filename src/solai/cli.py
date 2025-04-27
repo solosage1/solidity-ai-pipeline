@@ -1,5 +1,5 @@
 from pathlib import Path
-import shutil, subprocess, platform, importlib.resources as pkg, yaml
+import importlib.resources as pkg, yaml
 import typer
 from solai.runner import run_backlog, doctor as run_doctor
 

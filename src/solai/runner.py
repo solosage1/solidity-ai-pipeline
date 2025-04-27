@@ -1,4 +1,12 @@
-import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
+import subprocess
+import sys
+import yaml
+import shutil
+import tempfile
+import platform
+import re
+import time
+import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -63,10 +71,10 @@ def doctor():
         subprocess.check_output(
             "sweagent --version", shell=True, stderr=subprocess.STDOUT
         )
-        print(f"✓ SWE-Agent")
+        print("✓ SWE-Agent")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print(
-            f"⚠ SWE-Agent missing. Install from source: git clone https://github.com/princeton-nlp/SWE-agent.git && cd SWE-agent && pip install -e ."
+            "⚠ SWE-Agent missing. Install from source: git clone https://github.com/princeton-nlp/SWE-agent.git && cd SWE-agent && pip install -e ."
         )
 
     cfg = Path(".solai.yaml")

@@ -8,7 +8,7 @@ def test_image_present_with_digest():
     """Test image_present when Docker returns a digest."""
     with patch("subprocess.check_output") as mock_check_output:
         mock_check_output.return_value = "sha256:abc123\n"
-        assert image_present("test:latest") == True
+        assert image_present("test:latest")
         mock_check_output.assert_called_once_with(
             "docker images --no-trunc --format '{{.Digest}}' test:latest",
             shell=True,
@@ -20,7 +20,7 @@ def test_image_present_without_digest():
     """Test image_present when Docker returns empty string (image not found)."""
     with patch("subprocess.check_output") as mock_check_output:
         mock_check_output.return_value = "\n"
-        assert image_present("test:latest") == False
+        assert not image_present("test:latest")
         mock_check_output.assert_called_once_with(
             "docker images --no-trunc --format '{{.Digest}}' test:latest",
             shell=True,

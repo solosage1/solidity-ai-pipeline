@@ -1,9 +1,8 @@
 import sys
-import subprocess
+
 import pytest
 import site
 import importlib.util as ilu
-from pathlib import Path
 
 # Assume scripts/setup_stub_pkgs.py exists relative to the project root
 
