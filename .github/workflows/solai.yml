@@ -166,7 +166,7 @@ jobs:
               if not hook_init.exists():
                   hook_init.write_text('# stub enterprise_hooks package')
 
-              # Create 'session_handler' module with stub class
+              # Create 'session_handler' module with stub classes
               sh = eh / 'session_handler.py'
               if not sh.exists():
                   sh.write_text(
@@ -178,7 +178,11 @@ jobs:
                       "class ChatCompletionSession:\n"
                       "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler.ChatCompletionSession\"\"\"\n"
                       "    def __init__(self, *args, **kwargs):\n"
-                      "        # minimal stub implementation\n"
+                      "        pass\n"
+                      "\n"
+                      "class _ENTERPRISE_ResponsesSessionHandler:\n"
+                      "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler._ENTERPRISE_ResponsesSessionHandler\"\"\"\n"
+                      "    def __init__(self, *args, **kwargs):\n"
                       "        pass\n"
                   )
 
