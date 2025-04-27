@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1.7
-ARG TARGETARCH
 # Pinned base image for reproducibility
 # FROM ghcr.io/foundry-rs/foundry:1.0.0   # ← replace with your desired tag/digest
 # Using latest for now as 1.0.0 tag was not found
-FROM --platform=$TARGETARCH ghcr.io/foundry-rs/foundry:latest
+FROM ghcr.io/foundry-rs/foundry:latest
 USER root
 
 ENV DEBIAN_FRONTEND=noninteractive

@@ -94,19 +94,24 @@ jobs:
 
       # 6) Build Phase 3 Required Docker Image
       - name: Build Phase 3 Docker Image
+        id: docker_build # Add an ID to reference the output tag
         run: |
-          echo "--- Building Phase 3 Docker image ---"
-          docker build -t foundry_sol:0.4.4 -f src/solai/docker/foundry_sol.Dockerfile .
+          ARCH=$(dpkg --print-architecture)
+          IMAGE_TAG="foundry_sol:0.4.4-${ARCH}"
+          echo "--- Building Phase 3 Docker image for ${ARCH} --- Tag: ${IMAGE_TAG} ---"
+          docker build --platform "linux/${ARCH}" -t "${IMAGE_TAG}" -f src/solai/docker/foundry_sol.Dockerfile .
           echo "--- Docker image build finished ---"
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -q '^foundry_sol:0.4.4$' || { echo "❌ Failed to build or tag image correctly"; exit 1; }
-          echo "✓ Image foundry_sol:0.4.4 built successfully."
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${IMAGE_TAG}$" || { echo "❌ Failed to build or tag image ${IMAGE_TAG} correctly"; exit 1; }
+          echo "✓ Image ${IMAGE_TAG} built successfully."
+          # Output the tag for subsequent steps
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # Optional: If swerex-remote binary isn't found on default PATH
-          # SWE_REX_BIN: /path/to/swerex-remote 
+          # Make sure the container ID search uses the dynamically built tag
+          TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
         run: |
           set -e
           echo "--- 1️⃣ Creating isolated failing demo repo ---"
@@ -145,9 +150,13 @@ jobs:
           echo "✓ Checkpoint 1 Passed"
           
           echo "--- 2️⃣ Authoring minimal swe.yaml ---"
-          # Copy the pre-defined config file using the correct workspace path
+          # Copy the template
           cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
-          echo "✓ Copied swe.yaml config file"
+          # Modify the image tag IN PLACE using sed (more robust than assuming the value)
+          # Note: Using a different delimiter '#' for sed because tags might contain '/' or other special chars
+          sed -i "s#docker_image:.*#docker_image: ${TARGET_IMAGE_TAG}#" swe.yaml
+          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG}"
+          cat swe.yaml # Optional: verify the change
 
           echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
           TS=$(date +%Y%m%dT%H%M%S)
@@ -156,16 +165,37 @@ jobs:
           # Ensure OpenAI key is set
           [[ -n "${OPENAI_API_KEY-}" ]] || { echo "❌ OPENAI_API_KEY is not set in env"; exit 1; }
 
-          # Run swerex-remote
-          # Use SWE_REX_BIN env var if defined, otherwise use sweagent directly
-          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . \
-            2>&1 | tee "$LOGFILE"
+          # Run swerex-remote, capture exit code, and attempt to get logs
+          set +e # Allow the command to fail so we can capture logs
+          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
+          exit_code=$?
+          set -e # Re-enable exit on error
+
+          echo "--- 🩺 SWE-Agent Exit Code: $exit_code ---"
           
-          # Basic sanity check for patch file
+          # Attempt to get logs from the container if it failed early
+          if [ $exit_code -ne 0 ]; then
+            echo "--- 🪵 Attempting to capture Docker container logs ---"
+            container_id=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
+            if [ -n "$container_id" ]; then
+              echo "Found container ID: $container_id for image ${TARGET_IMAGE_TAG}"
+              docker logs "$container_id"
+            else
+              echo "Could not find container ID for image ${TARGET_IMAGE_TAG}"
+            fi
+          fi
+          
+          # Fail the step if the original command failed
+          if [ $exit_code -ne 0 ]; then
+            echo "❌ SWE-Agent run failed with exit code $exit_code"
+            exit $exit_code
+          fi
+
+          # Basic sanity check for patch file (only if sweagent succeeded)
           [ -s patch.tar ] || { echo "❌ patch.tar missing or empty"; exit 1; }
           echo "✓ Agent produced patch.tar"
-          docker ps -a --format '{{.Image}}' | grep -q 'foundry_sol:0.4.4' || { echo "❌ Expected container image not found"; exit 1; }
-          echo "✓ Checkpoint 3 Passed"
+          docker ps -a --format '{{.Image}}' | grep -q "${TARGET_IMAGE_TAG}" || { echo "❌ Expected container image ${TARGET_IMAGE_TAG} not found"; exit 1; }
+          echo "✓ Checkpoint 3 Passed (Using image ${TARGET_IMAGE_TAG})"
 
           echo "--- 4️⃣ Applying patch, enforcing guard-rails, re-testing ---"
           tar -xf patch.tar
