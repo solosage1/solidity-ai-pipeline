@@ -54,14 +54,11 @@ jobs:
       - name: Verify pip-compile Resolution Consistency
         run: |
           set -e
-          echo "--- Running pip-compile consistency pre-check ---"
-          # Generate resolved list without hashes
-          pip-compile --no-strip-extras --output-file temp_resolved_deps.txt constraints.txt
-          echo "--- Comparing against dry run output ---"
-          # Compare against dry-run output (also without hashes)
-          pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | diff -q temp_resolved_deps.txt -
-          echo "--- Consistency check passed --- "
-          rm temp_resolved_deps.txt
+          echo "--- Running pip-compile consistency pre-check (ignoring comments) ---"
+          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -v '^#') \
+                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -v '^#') || \
+            (echo "Error: pip-compile resolution inconsistency detected." && exit 1)
+          echo "--- Consistency check passed ---"
 
       - name: Generate Hashed Constraints # Create hash-pinned file
         run: |
