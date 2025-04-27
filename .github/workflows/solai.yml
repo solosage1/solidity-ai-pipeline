@@ -41,9 +41,8 @@ jobs:
             ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-
             ${{ runner.os }}-pip-
 
-      - name: Install build + lock tools # Updated name and command
-        run: |
-          python -m pip install --quiet "pip==24.3.1" "pip-tools>=7.4,<7.5"
+      - name: Install CI toolchain
+        uses: ./.github/actions/toolchain
 
       - name: Verify requirements.txt is in sync
         run: ci/verify_lock.sh
@@ -66,7 +65,7 @@ jobs:
           SHELLCHECK_OPTS: -e SC2148
 
       - name: Build wheel for lint job
-        run: python -m pip install --quiet build && python -m build --wheel
+        run: python -m build --wheel
 
       - name: Cache Built Wheel # P1: Cache the dist directory
         uses: actions/cache@v4
@@ -172,6 +171,9 @@ jobs:
         run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> "$GITHUB_ENV"
 
       # Verify requirements.txt is in sync (same as lint job)
+      - name: Install CI toolchain
+        uses: ./.github/actions/toolchain
+
       - name: Verify requirements.txt is in sync
         run: ci/verify_lock.sh
 
@@ -207,8 +209,6 @@ jobs:
             fi
 
             # Build the wheel
-            echo "Installing build tool..."
-            python -m pip install --quiet build
             echo "Building wheel..."
             python -m build --wheel
 

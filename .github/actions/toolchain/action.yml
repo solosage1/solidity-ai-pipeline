@@ -1,0 +1,8 @@
+name: 'Install CI Toolchain'
+description: 'Installs pinned versions of pip, pip-tools, and build tools for CI jobs'
+runs:
+  using: "composite"
+  steps:
+    - name: Install CI toolchain
+      shell: bash
+      run: ci/install_ci_tools.sh 
