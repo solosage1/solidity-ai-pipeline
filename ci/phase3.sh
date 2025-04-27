@@ -49,10 +49,10 @@ problem_statement:
   text: "Fix failing tests"
 
 agent:
-  model:
-    name: gpt-4o-mini
-  usd_cap: 0.20
-  action_sampler: {}
+  model: gpt-4o-mini          # scalar, not nested
+  retry_loop:                 # required in v1.1+
+    max_attempts: 3
+    backoff_seconds: 1
 
 env:
   repo:
@@ -60,9 +60,11 @@ env:
   deployment:
     type: local
 
-actions:
-  open_pr: false
-  apply_patch_locally: true
+# actions now live under agent_configs
+agent_configs:
+  actions:
+    open_pr: false
+    apply_patch_locally: true
 YAML
 
 echo "✓ Created swe.yaml"
