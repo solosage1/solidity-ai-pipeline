@@ -124,7 +124,7 @@ jobs:
       - name: Install SWE-Agent & SWE-ReX
         run: |
           python -m pip install --quiet --no-cache-dir \
-          "sweagent==1.0.1" \
+          "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
           "swe-rex==1.2.1" \
           "openai>=1.75.0,<2"
           # Verify installation
