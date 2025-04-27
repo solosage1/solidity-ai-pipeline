@@ -56,24 +56,10 @@ jobs:
         run: python -m pip install --quiet "slither-analyzer>=0.11.3"
 
       # 4b) Install Foundry
-      - name: Query Foundry version
-        id: foundry_version
-        run: |
-          echo "version=$(foundryup --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Foundry directory
-        id: cache-foundry
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.FOUNDRY_DIR }}
-          key: ${{ runner.os }}-foundry-${{ steps.foundry_version.outputs.version }}
-
       - name: Install Foundry
-        # Only run if cache wasn't restored
-        if: steps.cache-foundry.outputs.cache-hit != 'true'
         run: |
           # 1) Create Foundry directories
-          mkdir -p "$HOME/.foundry/bin" # Still needed for foundryup download
+          mkdir -p "$HOME/.foundry/bin"
           mkdir -p "${FOUNDRY_DIR}/bin"
           # 2) Download foundryup
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
@@ -86,10 +72,34 @@ jobs:
           # 6) Verify
           ls -la "${FOUNDRY_DIR}/bin/forge"
           # 7) Persist correct path
-          echo "${FOUNDRY_DIR}/bin" >> $GITHUB_PATH
+          echo "${FOUNDRY_DIR}/bin" >> "$GITHUB_PATH"
           # 8) Verify again
           export PATH="${FOUNDRY_DIR}/bin:$PATH"
           which forge
+          forge --version
+
+      # Query Foundry version after installation
+      - name: Query Foundry version
+        id: foundry_version
+        run: |
+          version=$(forge --version | awk '{print $3}')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Foundry directory
+        id: cache-foundry
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FOUNDRY_DIR }}
+          key: ${{ runner.os }}-foundry-${{ steps.foundry_version.outputs.version }}
+
+      # Only restore from cache if we haven't just installed
+      - name: Restore from cache if needed
+        if: steps.cache-foundry.outputs.cache-hit == 'true'
+        run: |
+          # Add Foundry to PATH when restoring from cache
+          echo "${FOUNDRY_DIR}/bin" >> "$GITHUB_PATH"
+          export PATH="${FOUNDRY_DIR}/bin:$PATH"
+          # Verify installation
           forge --version
 
       # 4c) Install SWE-Agent & SWE-ReX (from GitHub releases)
