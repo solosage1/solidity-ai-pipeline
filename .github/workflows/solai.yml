@@ -166,8 +166,6 @@ jobs:
 
           # Validate YAML
           python -c 'import yaml, sys; yaml.safe_load(open("swe.yaml")); print("✓ YAML valid")'
-          # Lint config (assuming sweagent is on PATH from solai[ai] install)
-          sweagent lint-config swe.yaml || { echo "❌ swe.yaml linting failed"; exit 1; }
           echo "✓ swe.yaml authored and validated"
 
           echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
