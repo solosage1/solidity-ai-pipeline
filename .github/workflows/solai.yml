@@ -177,26 +177,26 @@ jobs:
 
           echo "--- 🩺 SWE-Agent Exit Code: $exit_code ---"
           
-          # Attempt to get logs from the container if it failed early
-          if [ $exit_code -ne 0 ]; then
-            echo "--- 🪵 Attempting to capture Docker container logs ---"
-            container_id=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
-            if [ -n "$container_id" ]; then
-              echo "Found container ID: $container_id for image ${TARGET_IMAGE_TAG}"
-              docker logs "$container_id"
-            else
-              echo "Could not find container ID for image ${TARGET_IMAGE_TAG}"
-            fi
+          # Attempt to get logs from the container (ALWAYS try after the run)
+          echo "--- 🪵 Attempting to capture Docker container logs ---"
+          container_id=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
+          if [ -n "$container_id" ]; then
+            echo "Found container ID: $container_id for image ${TARGET_IMAGE_TAG}"
+            docker logs "$container_id"
+          else
+            echo "Could not find container ID for image ${TARGET_IMAGE_TAG}"
           fi
-          
-          # Fail the step if the original command failed
+
+          # Fail the step if the original command failed OR if the patch is missing
           if [ $exit_code -ne 0 ]; then
             echo "❌ SWE-Agent run failed with exit code $exit_code"
             exit $exit_code
+          elif [ ! -s patch.tar ]; then
+             echo "❌ patch.tar missing or empty after SWE-Agent run (Exit code: $exit_code)"
+             exit 1 # Fail explicitly if patch is missing, even if exit code was 0
           fi
 
-          # Basic sanity check for patch file (only if sweagent succeeded)
-          [ -s patch.tar ] || { echo "❌ patch.tar missing or empty"; exit 1; }
+          # Basic sanity check for patch file (only if sweagent succeeded AND patch exists)
           echo "✓ Agent produced patch.tar"
           docker ps -a --format '{{.Image}}' | grep -q "${TARGET_IMAGE_TAG}" || { echo "❌ Expected container image ${TARGET_IMAGE_TAG} not found"; exit 1; }
           echo "✓ Checkpoint 3 Passed (Using image ${TARGET_IMAGE_TAG})"
