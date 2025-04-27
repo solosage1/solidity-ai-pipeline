@@ -190,3 +190,48 @@ issue or ping @solosage1 on X.
 ---
 
 © 2024-2025 SoloSage LLC – MIT License
+
+## Development
+
+This project uses `constraints.txt` to define direct dependencies and `pip-tools`
+to generate a fully pinned `hashed_constraints.txt` with transitive dependencies
+for reproducible CI builds.
+
+**CI Workflow:**
+1. The `lint-and-test` job installs `pip-tools`.
+2. It generates `hashed_constraints.txt` from `constraints.txt`.
+3. It verifies the generated hashes match `constraints.txt`.
+4. It caches the generated `hashed_constraints.txt`.
+5. The `phase3_hello_world` job restores the cached `hashed_constraints.txt` and uses it.
+
+**Local Development:**
+
+To run tests locally, ensure you have Python 3.12+ installed:
+
+```bash
+# Optional: create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# Install build tool and project in editable mode
+python -m pip install build
+python -m pip install -e .
+
+# Install dependencies directly from constraints (no hashing locally by default)
+python -m pip install -r constraints.txt
+
+# Run tests
+pytest
+```
+
+**Managing Dependencies:**
+
+1.  Modify `constraints.txt` to add, remove, or update direct dependencies.
+2.  If you have a compatible `pip-tools` installation locally, you can optionally
+    pre-generate the hashed file to check for conflicts:
+    ```bash
+    python -m pip install pip-tools # If needed
+    pip-compile --generate-hashes --output-file hashed_constraints.txt constraints.txt
+    ```
+3.  Commit the changes to `constraints.txt`. CI will regenerate and verify the
+    `hashed_constraints.txt` automatically.
