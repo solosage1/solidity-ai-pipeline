@@ -261,18 +261,11 @@ jobs:
           printf '%s\n' "✓ Image $ARCH_TAG built successfully."
           echo "image_tag=${ARCH_TAG}" >> "$GITHUB_OUTPUT"
 
-      # Prepare the local sandbox for LocalDeployment (/demo must exist & be writeable)
-      - name: Prepare /demo sandbox
-        run: |
-          sudo mkdir -p /demo
-          sudo chmod 777 /demo
-
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run
         id: swe_agent_run_step
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
         shell: bash
         run: |
           set -e
@@ -335,13 +328,14 @@ jobs:
               path: .
             deployment:
               type: local
+              sandbox_dir: /tmp/swe_sandbox   # runner-writable
 
           actions:
             open_pr: false
             apply_patch_locally: true
           YAML
 
-          printf '%s\n' "✓ Created swe.yaml (deployment=local → /demo sandbox)"
+          printf '%s\n' "✓ Created swe.yaml with local deployment (sandbox=/tmp/swe_sandbox)"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
           # First check basic YAML syntax
