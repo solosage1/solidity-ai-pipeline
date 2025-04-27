@@ -55,8 +55,38 @@ jobs:
       - name: Install Slither
         run: python -m pip install --quiet "slither-analyzer>=0.11.3"
 
-      # 4b) Install Foundry
+      # -------------------------------------------------------------
+      # 4b) Determine latest Foundry version (does NOT need Foundry)
+      # -------------------------------------------------------------
+      - name: Query Foundry version            # runs fast (~150 ms)
+        id: foundry_version
+        run: |
+          version=$(curl -s https://api.github.com/repos/foundry-rs/foundry/releases/latest \
+                   | jq -r .tag_name)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # -------------------------------------------------------------
+      # 4c) Restore Foundry from cache (if we already built it once)
+      # -------------------------------------------------------------
+      - name: Cache Foundry directory
+        id: cache-foundry
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FOUNDRY_DIR }}
+          key: ${{ runner.os }}-foundry-${{ steps.foundry_version.outputs.version }}
+
+      - name: Restore Foundry from cache
+        if: steps.cache-foundry.outputs.cache-hit == 'true'
+        run: |
+          echo "${FOUNDRY_DIR}/bin" >> "$GITHUB_PATH"
+          export PATH="${FOUNDRY_DIR}/bin:$PATH"
+          forge --version
+
+      # -------------------------------------------------------------
+      # 4d) Install Foundry (ONLY if cache missed)
+      # -------------------------------------------------------------
       - name: Install Foundry
+        if: steps.cache-foundry.outputs.cache-hit != 'true'
         run: |
           # 1) Create Foundry directories
           mkdir -p "$HOME/.foundry/bin"
@@ -78,29 +108,17 @@ jobs:
           which forge
           forge --version
 
-      # Query Foundry version after installation
-      - name: Query Foundry version
-        id: foundry_version
+      # Debug: Post Docker PATH
+      - name: Debug - Post Docker PATH
         run: |
-          version=$(forge --version | awk '{print $3}')
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Foundry directory
-        id: cache-foundry
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.FOUNDRY_DIR }}
-          key: ${{ runner.os }}-foundry-${{ steps.foundry_version.outputs.version }}
-
-      # Only restore from cache if we haven't just installed
-      - name: Restore from cache if needed
-        if: steps.cache-foundry.outputs.cache-hit == 'true'
-        run: |
-          # Add Foundry to PATH when restoring from cache
-          echo "${FOUNDRY_DIR}/bin" >> "$GITHUB_PATH"
-          export PATH="${FOUNDRY_DIR}/bin:$PATH"
-          # Verify installation
-          forge --version
+          echo "PATH after Docker setup: $PATH"
+          cat "$GITHUB_PATH"
+          # skip redundant Foundry install if cache hit
+          if [[ "${{ steps.cache-foundry.outputs.cache-hit }}" == 'true' ]]; then
+            echo "Foundry cache hit – skipping binary path export"
+          else
+            which forge || echo "forge not found in PATH"
+          fi
 
       # 4c) Install SWE-Agent & SWE-ReX (from GitHub releases)
       - name: Install SWE-Agent & SWE-ReX
@@ -119,25 +137,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Debug: Post Docker PATH
-      - name: Debug - Post Docker PATH
-        run: |
-          echo "PATH after Docker setup: $PATH"
-          cat $GITHUB_PATH
-          # skip redundant Foundry install if cache hit
-          if [[ "${{ steps.cache-foundry.outputs.cache-hit }}" == 'true' ]]; then
-            echo "Foundry cache hit – skipping binary path export"
-          else
-            which forge || echo "forge not found in PATH"
-          fi
-
       # 6) Build Phase 3 Required Docker Image
       - name: Build Phase 3 Docker Image
         id: docker_build # Add an ID to reference the output tag
         run: |
-          ARCH=$(dpkg --print-architecture)
-          BASE_TAG="foundry_sol:0.4.6" # UPDATED base tag to 0.4.6
-          ARCH_TAG="${BASE_TAG}-${ARCH}"       # Define arch-specific tag
+          ARCH="$(dpkg --print-architecture)"
+          BASE_TAG="foundry_sol:0.4.6"
+          ARCH_TAG="${BASE_TAG}-${ARCH}"
           echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
           # Build with ARCH tag only
           docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" --progress=plain \
@@ -147,7 +153,7 @@ jobs:
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
           echo "✓ Image ${ARCH_TAG} built successfully."
           # Output the ARCH-specific tag for subsequent steps (swe.yaml update, container ID search)
-          echo "image_tag=${ARCH_TAG}" >> $GITHUB_OUTPUT
+          echo "image_tag=${ARCH_TAG}" >> "$GITHUB_OUTPUT"
 
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run
