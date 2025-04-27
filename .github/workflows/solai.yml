@@ -62,7 +62,7 @@ jobs:
           diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort) \
                  <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | tr -d '\\' | sort) || {
             echo "::error::requirements.txt is out of sync with constraints.txt."
-            echo "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes."
+            echo "Please run '\''pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt'\'' and commit the changes."
             rm "$tmp" # Clean up temp file
             exit 1
           }
