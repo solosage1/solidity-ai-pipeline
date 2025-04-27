@@ -260,7 +260,7 @@ jobs:
           SOLTEST
 
           # Expect failure – baseline should be red.
-          if forge test -q; then
+          if forge test -q 2>/dev/null; then
             printf '%s\n' '❌ tests unexpectedly green'
             exit 1
           else
