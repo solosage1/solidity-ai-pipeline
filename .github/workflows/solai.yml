@@ -177,9 +177,8 @@ jobs:
           [[ -n "${OPENAI_API_KEY-}" ]] || { echo "❌ OPENAI_API_KEY is not set in env"; exit 1; }
 
           # Run swerex-remote
-          # Use SWE_REX_BIN env var if defined, otherwise assume swerex-remote is on PATH
-          ${SWE_REX_BIN:-swerex-remote} run --image foundry_sol:0.4.4 \
-            -- sweagent run --config swe.yaml --output-tar patch.tar \
+          # Use SWE_REX_BIN env var if defined, otherwise use sweagent directly
+          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output-tar patch.tar \
             2>&1 | tee "$LOGFILE"
           
           # Basic sanity check for patch file
