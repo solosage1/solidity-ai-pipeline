@@ -42,13 +42,26 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install pip-tools # Needed for hash generation & verification
-        run: python -m pip install --quiet pip-tools
+        run: python -m pip install --quiet "pip-tools>=7.4,<7.5" # Install pinned version
 
       # Ensure we have the constraints file
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          path: .
+      # - name: Checkout repository
+      #   uses: actions/checkout@v4
+      #   with:
+      #     path: .
+
+      # Pre-check: Verify pip-compile resolution consistency BEFORE generating hashes
+      - name: Verify pip-compile Resolution Consistency
+        run: |
+          set -e
+          echo "--- Running pip-compile consistency pre-check ---"
+          # Generate resolved list without hashes
+          pip-compile --no-strip-extras --output-file temp_resolved_deps.txt constraints.txt
+          echo "--- Comparing against dry run output ---"
+          # Compare against dry-run output (also without hashes)
+          pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | diff -q temp_resolved_deps.txt -
+          echo "--- Consistency check passed --- "
+          rm temp_resolved_deps.txt
 
       - name: Generate Hashed Constraints # Create hash-pinned file
         run: |
@@ -57,15 +70,6 @@ jobs:
             --generate-hashes \
             --no-strip-extras \
             -o hashed_constraints.txt constraints.txt
-
-      # P2: Verify generated hashes match constraints (within this run)
-      - name: Verify Hash Consistency
-        run: |
-          pip-compile \
-            --quiet --dry-run \
-            --no-strip-extras \
-            -o - constraints.txt | diff -q hashed_constraints.txt - || {
-              echo "Error: Hash drift detected."; exit 1; }
 
       # P0: Cache the generated hashed constraints file
       - name: Cache Hashed Constraints
@@ -201,17 +205,42 @@ jobs:
 
       - name: Install solai wheel (from cache or build) # P1: Use cached wheel
         run: |
-          wheel_path="dist/solai-*.whl"
-          if ls "${wheel_path}" 1> /dev/null 2>&1; then
-            echo "Installing wheel from cache: $(ls "${wheel_path}")"
-            python -m pip install --quiet "$(ls "${wheel_path}")"
+          set -e # Exit immediately if a command exits with a non-zero status.
+          wheel_path_glob="dist/solai-*.whl"
+          # Use array expansion to safely handle glob patterns (avoids issues with spaces, finds multiple/no files)
+          wheel_files=( $wheel_path_glob )
+
+          # Check if cache hit AND exactly one wheel file exists
+          if [[ "${{ steps.cache-wheel-restore.outputs.cache-hit }}" == 'true' && -e "${wheel_files[0]}" && ${#wheel_files[@]} -eq 1 ]]; then
+            wheel_file="${wheel_files[0]}" # Assign the exact filename
+            echo "Installing wheel from cache: ${wheel_file}"
+            python -m pip install --quiet "${wheel_file}"
           else
-            echo "Wheel cache miss. Building and installing wheel."
-            # P1: Install build only if needed, right before use
+            # Provide clearer feedback based on cache status
+            if [[ "${{ steps.cache-wheel-restore.outputs.cache-hit }}" == 'true' ]]; then
+               # Cache hit but file missing/wrong count
+               echo "Warning: Wheel cache hit, but wheel file missing or unexpected count (${#wheel_files[@]}). Rebuilding."
+            else
+               echo "Wheel cache miss. Building and installing wheel."
+            fi
+
+            # Build the wheel
+            echo "Installing build tool..."
             python -m pip install --quiet build
+            echo "Building wheel..."
             python -m build --wheel
-            echo "Installing wheel: $(ls "${wheel_path}")"
-            python -m pip install --quiet "$(ls "${wheel_path}")"
+
+            # Re-check for the wheel file after build
+            wheel_files_after_build=( $wheel_path_glob )
+            if [[ -e "${wheel_files_after_build[0]}" && ${#wheel_files_after_build[@]} -eq 1 ]]; then
+              wheel_file="${wheel_files_after_build[0]}"
+              echo "Installing newly built wheel: ${wheel_file}"
+              python -m pip install --quiet "${wheel_file}"
+            else
+              echo "Error: Could not find exactly one wheel file (${wheel_path_glob}) after build. Found ${#wheel_files_after_build[@]} files."
+              ls -l dist/
+              exit 1
+            fi
           fi
 
       # Centralize PyYAML install for syntax checking later
