@@ -49,7 +49,9 @@ jobs:
           path: .
 
       - name: Generate Hashed Constraints # Create hash-pinned file
-        run: pip-compile --generate-hashes --output-file hashed_constraints.txt constraints.txt
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          pip-compile --generate-hashes --output-file hashed_constraints.txt constraints.txt
 
       # P2: Verify generated hashes match constraints (within this run)
       - name: Verify Hash Consistency
