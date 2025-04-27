@@ -259,14 +259,13 @@ jobs:
           }
           SOLTEST
 
+          # Expect failure – baseline should be red.
           if forge test -q; then
             printf '%s\n' '❌ tests unexpectedly green'
             exit 1
           else
-            printf '%s\n' '✓ baseline red'
+            printf '%s\n' '✓ baseline red (silenced warning)'
           fi
-
-          forge test -q || true   # silence "No tests to run" warning
 
           if ! grep -q '"HELLO"' Greeter.t.sol; then
             printf '%s\n' '❌ HELLO literal missing'
