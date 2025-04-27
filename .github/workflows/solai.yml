@@ -1,6 +1,10 @@
 name: solai-phase3-hello-world
 on: [push]
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   lint-workflow:
     runs-on: ubuntu-latest
