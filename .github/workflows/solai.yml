@@ -161,7 +161,10 @@ jobs:
           # Modify the image tag IN PLACE using sed
           # Note: Need to match the indented 'image:' key under env.deployment
           sed -i "s#^\(\s*image:\s*\).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
-          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG}"
+          # ADDED: Insert keep_container setting after the image line
+          sed -i "/^\s*image:\s*${TARGET_IMAGE_TAG}/a \
+            keep_container: true" swe.yaml
+          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG} and keep_container: true"
           cat swe.yaml # Optional: verify the change
 
           echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
@@ -173,8 +176,8 @@ jobs:
 
           # Run swerex-remote, capture exit code, and attempt to get logs
           set +e # Allow the command to fail so we can capture logs
-          # ADDED: --keep-container flag (value from $KEEP_CONTAINER env var)
-          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . --keep-container $KEEP_CONTAINER 2>&1 | tee "$LOGFILE"
+          # REMOVED: --keep-container flag (moved to swe.yaml config)
+          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
           exit_code=$?
           set -e # Re-enable exit on error
 
