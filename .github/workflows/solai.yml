@@ -46,36 +46,7 @@ jobs:
           python -m pip install --quiet "pip<25" "pip-tools>=7.4,<7.5"
 
       - name: Verify requirements.txt is in sync
-        run: |
-          set -euo pipefail
-          tmp_compiled="$(mktemp)"
-          tmp_current="$(mktemp)"
-          tmp_compiled_filtered="$(mktemp)"
-          tmp_current_filtered="$(mktemp)"
-
-          # Ensure pip-compile runs quietly but exits on error
-          pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp_compiled" constraints.txt || {
-            printf "::error::pip-compile failed to generate lock file from constraints.txt\n"
-            rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered" # Clean up temp files
-            exit 1
-          }
-
-          # Filter both files to only include package lines, normalize line endings, and sort
-          grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort > "$tmp_current_filtered"
-          grep -E '^[A-Za-z0-9_.-]+==' "$tmp_compiled" | tr -d '\\' | sort > "$tmp_compiled_filtered"
-
-          # Compare the filtered files using unified diff
-          printf "Comparing current requirements.txt with newly compiled version...\n"
-          diff -u "$tmp_current_filtered" "$tmp_compiled_filtered" || {
-            printf "::error::requirements.txt is out of sync with constraints.txt.\n"
-            printf "Please run '\''pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt'\'' and commit the changes.\n"
-            rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered" # Clean up temp files
-            exit 1
-          }
-
-          # If diff passes, clean up and confirm
-          rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered"
-          printf "requirements.txt is up to date.\n"
+        run: ci/verify_lock.sh
 
       - name: Run actionlint (GitHub Workflow lint)
         uses: reviewdog/action-actionlint@v1
@@ -110,8 +81,7 @@ jobs:
       - name: Install wheel and test dependencies # Updated name and command
         run: |
           set -e
-          # Install the built wheel (assuming it exists from cache/build step)
-          # Use find to robustly get the wheel file path, handle spaces/errors
+          # Install the built wheel
           wheel_file=$(find dist -maxdepth 1 -name 'solai-*.whl' -print -quit)
           if [[ -z "$wheel_file" ]]; then
             echo "::error::Wheel file not found in dist/ directory."
@@ -121,12 +91,32 @@ jobs:
           echo "Installing wheel: ${wheel_file}"
           python -m pip install --quiet "${wheel_file}"
 
-          # Install test dependencies from the lock file
+          # Install dependencies from lock file, respecting hashes
           echo "Installing dependencies from requirements.txt"
-          # First install Git dependencies without hash verification
-          grep '@ git+' requirements.txt | python -m pip install --quiet -r /dev/stdin
-          # Then install PyPI packages with hash verification
-          grep -v '@ git+' requirements.txt | python -m pip install --quiet -r /dev/stdin --require-hashes
+          # Separate Git and PyPI dependencies
+          tmp_git_reqs=$(mktemp)
+          tmp_pypi_reqs=$(mktemp)
+          grep    '@ git+' requirements.txt > "$tmp_git_reqs"  || true # Allow empty file
+          grep -v '@ git+' requirements.txt > "$tmp_pypi_reqs" || true # Allow empty file
+
+          # Install Git dependencies first (no hash check possible)
+          if [[ -s "$tmp_git_reqs" ]]; then
+            echo "Installing Git dependencies..."
+            python -m pip install --quiet --no-cache-dir -r "$tmp_git_reqs"
+          else
+            echo "No Git dependencies found."
+          fi
+
+          # Install PyPI dependencies with hash checking
+          if [[ -s "$tmp_pypi_reqs" ]]; then
+            echo "Installing PyPI dependencies with hash checking..."
+            python -m pip install --quiet --no-cache-dir -r "$tmp_pypi_reqs" --require-hashes
+          else
+            echo "No PyPI dependencies found."
+          fi
+
+          # Clean up temp files
+          rm "$tmp_git_reqs" "$tmp_pypi_reqs"
 
       - name: Check pip dependencies (lint job)
         run: python -m pip check
@@ -308,10 +298,31 @@ jobs:
           set -xeuo pipefail
           # P1: Install using lock file for reproducibility & security
           echo "Installing dependencies from requirements.txt"
-          # First install Git dependencies without hash verification
-          grep '@ git+' requirements.txt | python -m pip install --quiet --no-cache-dir -r /dev/stdin
-          # Then install PyPI packages with hash verification
-          grep -v '@ git+' requirements.txt | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
+
+          # Separate Git and PyPI dependencies
+          tmp_git_reqs=$(mktemp)
+          tmp_pypi_reqs=$(mktemp)
+          grep    '@ git+' requirements.txt > "$tmp_git_reqs"  || true # Allow empty file
+          grep -v '@ git+' requirements.txt > "$tmp_pypi_reqs" || true # Allow empty file
+
+          # Install Git dependencies first (no hash check possible)
+          if [[ -s "$tmp_git_reqs" ]]; then
+            echo "Installing Git dependencies..."
+            python -m pip install --quiet --no-cache-dir -r "$tmp_git_reqs"
+          else
+            echo "No Git dependencies found."
+          fi
+
+          # Install PyPI dependencies with hash checking
+          if [[ -s "$tmp_pypi_reqs" ]]; then
+            echo "Installing PyPI dependencies with hash checking..."
+            python -m pip install --quiet --no-cache-dir -r "$tmp_pypi_reqs" --require-hashes
+          else
+            echo "No PyPI dependencies found."
+          fi
+
+          # Clean up temp files
+          rm "$tmp_git_reqs" "$tmp_pypi_reqs"
 
           echo "+++ Creating runtime stubs ..."
           python scripts/setup_stub_pkgs.py
