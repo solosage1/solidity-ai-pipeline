@@ -148,15 +148,33 @@ jobs:
           import importlib.util, pathlib, sys, textwrap, site, os
 
           # ------------------------------------------------------------------
-          # Create dummy 'enterprise' module to satisfy SWE-agent import
+          # Stub out missing 'enterprise' package and 'enterprise_hooks.session_handler'
           # ------------------------------------------------------------------
           site_pkg = pathlib.Path(site.getsitepackages()[0])
           for base in (site_pkg, pathlib.Path(site_pkg).parent):
+              # Create root 'enterprise' package
               ent = base / 'enterprise'
               ent.mkdir(parents=True, exist_ok=True)
               init_py = ent / '__init__.py'
               if not init_py.exists():
-                  init_py.write_text('# placeholder enterprise module')
+                  init_py.write_text('# stub enterprise package')
+
+              # Create 'enterprise_hooks' subpackage
+              eh = ent / 'enterprise_hooks'
+              eh.mkdir(parents=True, exist_ok=True)
+              hook_init = eh / '__init__.py'
+              if not hook_init.exists():
+                  hook_init.write_text('# stub enterprise_hooks package')
+
+              # Create 'session_handler' module with stub class
+              sh = eh / 'session_handler.py'
+              if not sh.exists():
+                  sh.write_text(textwrap.dedent("""\
+          class SessionHandler:
+              """Stub for enterprise.enterprise_hooks.session_handler"""
+              def __init__(self, *args, **kwargs):
+                  pass
+          """))
 
           spec = importlib.util.find_spec("sweagent")
           if spec is None:
