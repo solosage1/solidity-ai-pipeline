@@ -53,13 +53,19 @@ jobs:
       - name: Generate Hashed Constraints # Create hash-pinned file
         run: |
           cd "$GITHUB_WORKSPACE"
-          pip-compile --generate-hashes --output-file hashed_constraints.txt constraints.txt
+          pip-compile \
+            --generate-hashes \
+            --no-strip-extras \
+            -o hashed_constraints.txt constraints.txt
 
       # P2: Verify generated hashes match constraints (within this run)
       - name: Verify Hash Consistency
         run: |
-          pip-compile --quiet --dry-run --output-file - constraints.txt | diff -q hashed_constraints.txt - || \
-            (echo "Error: Hash drift detected between constraints.txt and generated hashed_constraints.txt." && exit 1)
+          pip-compile \
+            --quiet --dry-run \
+            --no-strip-extras \
+            -o - constraints.txt | diff -q hashed_constraints.txt - || {
+              echo "Error: Hash drift detected."; exit 1; }
 
       # P0: Cache the generated hashed constraints file
       - name: Cache Hashed Constraints
