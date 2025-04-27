@@ -5,7 +5,6 @@ agent:
   model:
     name: gpt-4o-mini
   action_sampler: {}
-  usd_cap: 0.20
 
 env:
   repo:
@@ -15,4 +14,6 @@ env:
 
 actions:
   open_pr: false
-  apply_patch_locally: true 
+  apply_patch_locally: true
+
+usd_cap: 0.20 
