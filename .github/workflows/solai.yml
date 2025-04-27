@@ -56,10 +56,11 @@ jobs:
             exit 1
           }
           # Compare the generated file with the committed one using unified diff
-          # Filter both files to only include package lines for robust comparison
+          # Filter both files to only include package lines and normalize line endings
           echo "Comparing current requirements.txt with newly compiled version..."
-          diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | sort) \
-                 <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | sort) || {
+          # Normalize line endings and remove backslashes before comparison
+          diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort) \
+                 <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | tr -d '\\' | sort) || {
             echo "::error::requirements.txt is out of sync with constraints.txt."
             echo "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes."
             rm "$tmp" # Clean up temp file
