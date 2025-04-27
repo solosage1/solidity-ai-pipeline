@@ -16,4 +16,4 @@ actions:
   open_pr: false
   apply_patch_locally: true
 
-usd_cap: 0.20 
+# usd_cap: 0.20 # Removed - Invalid field for v1.0.1 
