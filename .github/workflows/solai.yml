@@ -225,8 +225,12 @@ jobs:
         shell: sudo -E bash {0}
         run: |
           set -e
-          # Ensure root can see Foundry, user-site, and system-site CLIs
-          export PATH="$FOUNDRY_DIR/bin:$(python3 -m site --user-base)/bin:$(python3 -c 'import site,sys;print(site.getsitepackages()[0] + "/bin")'):$PATH"
+          # Ensure root can see
+          #   • Foundry               ($FOUNDRY_DIR/bin)
+          #   • Interpreter scripts   (same dir as `python`, holds sweagent / pip)
+          #   • User-site scripts     ($HOME/.local/bin)
+          PY_BIN_DIR=$(python3 -c 'import os,sys;print(os.path.dirname(sys.executable))')
+          export PATH="$FOUNDRY_DIR/bin:$PY_BIN_DIR:$(python3 -m site --user-base)/bin:$PATH"
 
           printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
