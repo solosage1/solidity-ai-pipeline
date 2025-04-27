@@ -154,8 +154,9 @@ jobs:
       - name: Phase 3 - SWE-Agent Run  # single sudo, stripped user-site path
         id: swe_agent_run_step
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PYBIN_DIR: ${{ env.PYBIN_DIR }}
-        shell: sudo -E env "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" bash {0}
+        shell: sudo -E bash {0}
         run: |
           set -euo pipefail
           # Foundry ▸ recorded python-bin ▸ rest
