@@ -10,7 +10,7 @@ cd /tmp
 rm -rf demo && mkdir demo && cd demo
 git init -q
 
-cat > Greeter.sol << 'SOL'
+cat > 'Greeter.sol' << 'SOL'
 pragma solidity ^0.8.26;
 contract Greeter {
     string private greeting = "hello";
@@ -20,7 +20,7 @@ contract Greeter {
 }
 SOL
 
-cat > Greeter.t.sol << 'SOLTEST'
+cat > 'Greeter.t.sol' << 'SOLTEST'
 pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import "./Greeter.sol";
@@ -44,27 +44,27 @@ else
 fi
 
 # 2️⃣ Create swe.yaml with spending cap
-cat > swe.yaml << 'YAML'
+{
+  set -euo pipefail
+  cat > 'swe.yaml' << 'YAML'
+# Minimal, fully-valid RunSingleConfig
 problem_statement:
   text: Fix failing tests
+
+agent:
+  model: gpt-4o-mini               # simple model string, no retry loop here
 
 actions:
   apply_patch_locally: true
   open_pr: false
 
-agent:
-  model:
-    name: gpt-4o-mini
-  retry_loop:
-    type: score
-    accept_score: 0.6
-    cost_limit: 0.20
-    backoff_seconds: 1
-    model:
-      name: gpt-4o-mini
-    reviewer_config:
-      name: gpt-4o-mini
-      rubric: default
+# Simple chooser retry policy (avoids complex reviewer templates)
+retry_loop:
+  type: chooser
+  chooser: gpt-4o-mini
+  max_attempts: 3
+  cost_limit: 0.2
+  backoff_seconds: 1
 
 env:
   repo:
@@ -73,7 +73,16 @@ env:
     type: local
 YAML
 
-echo "✓ Created swe.yaml"
+  # Validate the configuration
+  echo "Validating SWE-Agent configuration..."
+  if ! "$PYBIN_DIR/python" -m sweagent validate --config swe.yaml; then
+    echo "❌ SWE-Agent configuration validation failed"
+    exit 1
+  fi
+  echo "✓ Configuration validated successfully"
+}
+
+echo "✓ Created and validated swe.yaml"
 
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)

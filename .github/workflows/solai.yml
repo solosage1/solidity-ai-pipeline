@@ -43,7 +43,7 @@ jobs:
 
       - name: Install build + lock tools # Updated name and command
         run: |
-          python -m pip install --quiet "pip<25" "pip-tools>=7.4,<7.5"
+          python -m pip install --quiet "pip==24.3.1" "pip-tools>=7.4,<7.5"
 
       - name: Verify requirements.txt is in sync
         run: ci/verify_lock.sh
@@ -66,7 +66,7 @@ jobs:
           SHELLCHECK_OPTS: -e SC2148
 
       - name: Build wheel for lint job
-        run: python -m build --wheel
+        run: python -m pip install --quiet build && python -m build --wheel
 
       - name: Cache Built Wheel # P1: Cache the dist directory
         uses: actions/cache@v4
@@ -104,11 +104,11 @@ jobs:
             echo "No Git dependencies found."
           fi
 
-          # Install PyPI dependencies with hash checking
+          # Install PyPI dependencies with hash checking, excluding dev/unsafe tools
           if [[ -s "$tmp_pypi_reqs" ]]; then
             echo "Installing PyPI dependencies with hash checking..."
             # Filter out dev/unsafe tools that break --require-hashes
-            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" > "$filtered_pypi"
+            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" | tee "$filtered_pypi"
             python -m pip install --quiet --no-cache-dir -r "$filtered_pypi" --require-hashes
           else
             echo "No PyPI dependencies found."
@@ -170,6 +170,10 @@ jobs:
       # Export runner's interpreter path for root
       - name: Export PYBIN_DIR
         run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> "$GITHUB_ENV"
+
+      # Verify requirements.txt is in sync (same as lint job)
+      - name: Verify requirements.txt is in sync
+        run: ci/verify_lock.sh
 
       # 4) Install your wheel + AI backends via pip
       - name: Restore Cached Wheel # P1: Restore wheel from lint job cache
@@ -302,6 +306,7 @@ jobs:
           # Separate Git and PyPI dependencies
           tmp_git_reqs=$(mktemp)
           tmp_pypi_reqs=$(mktemp)
+          filtered_pypi=$(mktemp)
           grep    '@ git+' requirements.txt > "$tmp_git_reqs"  || true # Allow empty file
           grep -v '@ git+' requirements.txt > "$tmp_pypi_reqs" || true # Allow empty file
 
@@ -317,14 +322,14 @@ jobs:
           if [[ -s "$tmp_pypi_reqs" ]]; then
             echo "Installing PyPI dependencies with hash checking..."
             # Filter out dev/unsafe tools that break --require-hashes
-            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" \
-              | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
+            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" | tee "$filtered_pypi"
+            python -m pip install --quiet --no-cache-dir -r "$filtered_pypi" --require-hashes
           else
             echo "No PyPI dependencies found."
           fi
 
           # Clean up temp files
-          rm "$tmp_git_reqs" "$tmp_pypi_reqs"
+          rm "$tmp_git_reqs" "$tmp_pypi_reqs" "$filtered_pypi"
 
           echo "+++ Creating runtime stubs ..."
           python scripts/setup_stub_pkgs.py
