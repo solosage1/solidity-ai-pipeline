@@ -92,7 +92,7 @@ jobs:
         run: |
           set -e
           # Install the built wheel
-          wheel=$(ls dist/solai-*.whl)
+          wheel="$(ls dist/solai-*.whl)"
           python -m pip install --quiet "${wheel}"
           # Install test dependencies from hashed constraints
           python -m pip install --quiet -r hashed_constraints.txt --require-hashes
@@ -186,16 +186,16 @@ jobs:
       - name: Install solai wheel (from cache or build) # P1: Use cached wheel
         run: |
           wheel_path="dist/solai-*.whl"
-          if ls $wheel_path 1> /dev/null 2>&1; then
-            echo "Installing wheel from cache: $(ls $wheel_path)"
-            python -m pip install --quiet $(ls $wheel_path)
+          if ls "${wheel_path}" 1> /dev/null 2>&1; then
+            echo "Installing wheel from cache: $(ls "${wheel_path}")"
+            python -m pip install --quiet "$(ls "${wheel_path}")"
           else
             echo "Wheel cache miss. Building and installing wheel."
             # P1: Install build only if needed, right before use
             python -m pip install --quiet build
             python -m build --wheel
-            echo "Installing wheel: $(ls $wheel_path)"
-            python -m pip install --quiet $(ls $wheel_path)
+            echo "Installing wheel: $(ls "${wheel_path}")"
+            python -m pip install --quiet "$(ls "${wheel_path}")"
           fi
 
       # Centralize PyYAML install for syntax checking later
