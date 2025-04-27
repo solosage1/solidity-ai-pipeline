@@ -51,24 +51,24 @@ jobs:
           tmp="$(mktemp)"
           # Ensure pip-compile runs quietly but exits on error
           pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp" constraints.txt || {
-            echo "::error::pip-compile failed to generate lock file from constraints.txt"
+            printf "::error::pip-compile failed to generate lock file from constraints.txt\n"
             rm "$tmp" # Clean up temp file
             exit 1
           }
           # Compare the generated file with the committed one using unified diff
           # Filter both files to only include package lines and normalize line endings
-          echo "Comparing current requirements.txt with newly compiled version..."
+          printf "Comparing current requirements.txt with newly compiled version...\n"
           # Normalize line endings and remove backslashes before comparison
           diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort) \
                  <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | tr -d '\\' | sort) || {
-            echo "::error::requirements.txt is out of sync with constraints.txt."
-            echo "Please run '\''pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt'\'' and commit the changes."
+            printf "::error::requirements.txt is out of sync with constraints.txt.\n"
+            printf "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes.\n"
             rm "$tmp" # Clean up temp file
             exit 1
           }
           # If diff passes, clean up and confirm
           rm "$tmp"
-          echo "requirements.txt is up to date."
+          printf "requirements.txt is up to date.\n"
 
       - name: Run actionlint (GitHub Workflow lint)
         uses: reviewdog/action-actionlint@v1
