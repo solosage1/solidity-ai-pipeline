@@ -1,6 +1,6 @@
 # solai – Solidity AI Pipeline
 
-![Phase 3](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
+[![CI](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml)
 
 > **Plug-and-play pipeline to automatically diagnose & fix failing Solidity tests with GPT-4o-mini, Foundry & Slither.**
 
@@ -39,6 +39,9 @@ pip install "dist/solai-*.whl[ai]"     # installs all runtime deps
 
 # verify & set up host
 make bootstrap-solai                   # runs `solai doctor` & fixes common issues
+
+# Run the Phase 3 demo script locally (after bootstrap)
+./ci/phase3.sh
 ```
 
 `make bootstrap-solai` will

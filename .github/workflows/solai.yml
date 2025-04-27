@@ -50,6 +50,7 @@ jobs:
         uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: ci
+          severity: error # Fail build on warnings
 
       - name: Install and run tests
         run: |
@@ -201,6 +202,12 @@ jobs:
           echo "+++ Running original import smoke-test..."
           python -c 'import sweagent; print("import ok:", sweagent.__version__)'
           echo "--- Original import smoke-test finished."
+
+      # Cache Slither Docker image before running phase 3 script
+      - name: Cache Slither Docker image
+        uses: satackey/action-docker-layer-caching@v0.0.11
+        with:
+          key: ${{ runner.os }}-slither-latest-slim
 
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run

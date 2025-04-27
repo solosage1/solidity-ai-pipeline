@@ -28,4 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Cross-platform stat command issues
 - OpenAI package version pinned exactly to 1.76.1
-- Fixed heredoc syntax issues in workflow 
+- Fixed heredoc syntax issues in workflow
+- CI: Corrected various linting errors (unused imports, f-strings, boolean comparisons) identified by Ruff.
+- CI: Hardened workflow security using `sudo --preserve-env` and aligned Ruff action Python version. 
