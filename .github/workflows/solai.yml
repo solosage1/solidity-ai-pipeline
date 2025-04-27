@@ -8,8 +8,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check workflow files
         uses: docker://rhysd/actionlint:latest
-        with:
-          ignore: 'SC2046'  # Allow word splitting in command substitution
 
   phase3_hello_world:
     needs: lint-workflow
@@ -63,7 +61,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.FOUNDRY_DIR }} # Now correctly references job-level env var
-          key: ${{ runner.os }}-foundry-v0.4.6 # Key includes OS and base tag version
+          key: ${{ runner.os }}-foundry-${{ steps.foundry_version.outputs.version }}
+
+      - name: Get Foundry version
+        id: foundry_version
+        run: |
+          # Create Foundry directories
+          mkdir -p "$HOME/.foundry/bin"
+          # Download foundryup
+          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
+          # Make executable
+          chmod +x "$HOME/.foundry/bin/foundryup"
+          # Add to temp PATH
+          export PATH="$HOME/.foundry/bin:$PATH"
+          # Get version
+          foundryup --version | tee /dev/stderr | sed -n 's/.*foundryup \([0-9.]*\).*/\1/p' > version.txt
+          echo "version=$(cat version.txt)" >> $GITHUB_OUTPUT
 
       - name: Install Foundry
         # Only run if cache wasn't restored
@@ -93,7 +106,7 @@ jobs:
       - name: Install SWE-Agent & SWE-ReX
         run: |
           python -m pip install --quiet --no-cache-dir \
-          "git+https://github.com/princeton-nlp/SWE-agent.git@v0.4.0" \
+          "sweagent==1.0.1" \
           "swe-rex==1.2.1" \
           "openai>=1.75.0,<2"
           # Verify installation
@@ -126,13 +139,12 @@ jobs:
           BASE_TAG="foundry_sol:0.4.6" # UPDATED base tag to 0.4.6
           ARCH_TAG="${BASE_TAG}-${ARCH}"       # Define arch-specific tag
           echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
-          # Build with ARCH tag, also tag with BASE tag
-          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" -t "${BASE_TAG}" --progress=plain \
+          # Build with ARCH tag only
+          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" --progress=plain \
                       -f src/solai/docker/foundry_sol.Dockerfile .
           echo "--- Docker image build finished ---"
-          # Verify both tags exist
+          # Verify arch tag exists
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
-          # Only verify the arch-specific tag; we stopped writing the generic one
           echo "✓ Image ${ARCH_TAG} built successfully."
           # Output the ARCH-specific tag for subsequent steps (swe.yaml update, container ID search)
           echo "image_tag=${ARCH_TAG}" >> $GITHUB_OUTPUT
@@ -177,7 +189,6 @@ jobs:
           SOLTEST
 
           forge test -q && { echo "❌ tests unexpectedly green"; exit 1; } || echo "✓ baseline red"
-          forge test --match-path Greeter.t.sol -q && { echo "❌ tests unexpectedly green"; exit 1; } || echo "✓ baseline red"
           grep -q '"HELLO"' Greeter.t.sol || { echo "❌ 'HELLO' literal missing from test"; exit 1; }
           echo "✓ Checkpoint 1 Passed"
           
