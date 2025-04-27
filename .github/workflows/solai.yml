@@ -126,6 +126,8 @@ jobs:
 
       # 4e) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
       - name: Install SWE-Agent & SWE-ReX
+        env:
+          DEBUG: ${{ env.DEBUG }}    # set to "true" for debug dumps
         run: |
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
@@ -133,39 +135,27 @@ jobs:
             "openai>=1.75.0,<2"
 
           # ------------------------------------------------------------------
-          # Work-around packaging bug: create the missing sweagent/config dir
+          # Combined work-around: create config/tools dirs and optional debug
           # ------------------------------------------------------------------
           python - <<'PY'
-          import importlib.util, pathlib, sys, textwrap, site
+          import importlib.util, pathlib, sys, textwrap, site, os
 
           spec = importlib.util.find_spec("sweagent")
           if spec is None:
               sys.exit("❌ sweagent not found after install")
 
           pkg_dir = pathlib.Path(spec.origin).parent
-          cfg_dir = pkg_dir / "config"
-          cfg_dir.mkdir(exist_ok=True)
-
-          # Also create the config dir directly in site-packages as a fallback
           site_pkg = pathlib.Path(site.getsitepackages()[0])
-          site_cfg_dir = site_pkg / "config"
-          site_cfg_dir.mkdir(exist_ok=True)
 
-          # Minimal placeholder config (prevents runtime asserts)
-          default_cfg = cfg_dir / "default.yaml"
-          if not default_cfg.exists():
-              default_cfg.write_text(textwrap.dedent("""\
-          #############################
-          # Minimal placeholder config
-          #############################
-          agent:
-            name: placeholder
-          """))
-          
-          # Also write it to the site-packages config dir
-          site_default_cfg = site_cfg_dir / "default.yaml"
-          if not site_default_cfg.exists():
-              site_default_cfg.write_text(textwrap.dedent("""\
+          # Create both config and tools directories
+          for base in [pkg_dir, site_pkg]:
+              for sub in ("config", "tools"):
+                  d = base / sub
+                  d.mkdir(parents=True, exist_ok=True)
+                  if sub == "config":
+                      cfg = d / "default.yaml"
+                      if not cfg.exists():
+                          cfg.write_text(textwrap.dedent("""\
           #############################
           # Minimal placeholder config
           #############################
@@ -173,20 +163,13 @@ jobs:
             name: placeholder
           """))
 
-          print(f"✓ sweagent installed at {pkg_dir}")
-          print(f"✓ ensured {cfg_dir} exists with a placeholder config")
-          print(f"✓ ensured {site_cfg_dir} exists with a placeholder config")
-          PY
-
-          # Debug: print where Python thinks sweagent is installed
-          python - <<'PY'
-          import importlib.metadata, site, os
-          print("sweagent version:", importlib.metadata.version("sweagent"))
-          print("Python site-packages:", site.getsitepackages()[0])
-          print("Checking config locations:")
-          for path in ["/opt/hostedtoolcache/Python/3.12.10/x64/lib/python3.12/site-packages/config",
-                      "/opt/hostedtoolcache/Python/3.12.10/x64/lib/python3.12/site-packages/sweagent/config"]:
-              print(f"- {path}: {'exists' if os.path.isdir(path) else 'missing'}")
+          # Optional debug output
+          if os.getenv("DEBUG", "").lower() in ("1", "true"):
+              print(f"sweagent pkg_dir: {pkg_dir}")
+              print(f"site-packages base: {site_pkg}")
+              for path in (pkg_dir / "config", site_pkg / "config",
+                           pkg_dir.parent / "tools", site_pkg / "tools"):
+                  print(f"- {path}: {'exists' if path.exists() else 'missing'}")
           PY
 
           which sweagent || { echo "sweagent CLI not in PATH"; exit 1; }
