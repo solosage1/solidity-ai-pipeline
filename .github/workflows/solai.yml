@@ -44,7 +44,7 @@ jobs:
           python-version: '3.12'
       # Export runner's interpreter path for root
       - name: Export PYBIN_DIR
-        run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> $GITHUB_ENV
+        run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> "$GITHUB_ENV"
 
       # Upgrade pip once at the beginning
       - name: Upgrade pip
