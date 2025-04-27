@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "Initial PATH: $PATH"
           echo "GITHUB_PATH content:"
-          cat $GITHUB_PATH || echo "GITHUB_PATH not found"
+          cat "$GITHUB_PATH" || echo "GITHUB_PATH not found"
 
       # 3) Install build tool + build your wheel
       - name: Install build tooling
@@ -88,15 +88,15 @@ jobs:
       - name: Install Foundry
         if: steps.cache-foundry.outputs.cache-hit != 'true'
         run: |
-          # 1) Create Foundry directories
-          mkdir -p "$HOME/.foundry/bin"
+          # 1) Create Foundry directory
           mkdir -p "${FOUNDRY_DIR}/bin"
-          # 2) Download foundryup
-          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
+          # 2) Download foundryup directly into the standard dir
+          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup \
+               -o "${FOUNDRY_DIR}/bin/foundryup"
           # 3) Make executable
-          chmod +x "$HOME/.foundry/bin/foundryup"
+          chmod +x "${FOUNDRY_DIR}/bin/foundryup"
           # 4) Add to temp PATH
-          export PATH="$HOME/.foundry/bin:$PATH"
+          export PATH="${FOUNDRY_DIR}/bin:$PATH"
           # 5) Install full suite
           foundryup || echo "foundryup command failed with exit code $?"
           # 6) Verify
@@ -346,12 +346,10 @@ jobs:
           # Make sure we use the same tag as the build step
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
         run: |
-          # REPLACED SCRIPT with more robust version
           echo "⏬ docker ps -a"
           docker ps -a --no-trunc
           
           # Pick the most recent container started from our image
-          # Using TARGET_IMAGE_TAG which is correctly set in env above
           CID=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format '{{.ID}}' | head -n1)
           
           if [ -z "$CID" ]; then
@@ -363,9 +361,9 @@ jobs:
           
           echo "Found container ID: $CID"
           echo "⏬ docker inspect $CID | jq '.[0].State'"
-          # Ensure jq is available (should be on standard runners)
-          # If jq fails, the raw inspect output might still be partially useful
-          docker inspect "$CID" | jq '.[0].State' || echo "jq command failed, raw inspect output might be above"
+          # Guarantee jq exists even if GitHub changes the base image
+          command -v jq >/dev/null || sudo apt-get update -y && sudo apt-get install -y jq
+          docker inspect "$CID" | jq '.[0].State'
           
           echo "⏬ docker logs $CID (last 200 lines)"
           docker logs --tail 200 "$CID" || true
