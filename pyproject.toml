@@ -4,20 +4,50 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "solai"
-version         = "0.4.0"
-description     = "Plug-and-play AI improvement pipeline for Solidity projects"
+version         = "0.4.4"
+description     = "Run SWE-Agent on Solidity codebases via SWE-ReX"
 readme          = "README.md"
 requires-python = ">=3.12"
 license         = {text = "MIT"}
-authors         = [{name = "SoloLabs"}]
+authors         = [{name = "SoloLabs"}, {name="Solidity AI Pipeline Team", email="dev@example.com"}]
 dependencies    = [
   "typer>=0.12",
   "rich>=13",
-  "pyyaml>=6"
+  "pyyaml>=6",
+  # AI dependencies are now provided via the [ai] extra below
 ]
+
+[tool.hatch.build]
+# only-packages = true  # <<< Commented out to allow non-package data
+include = [
+  "/src/solai", # Include the main package directory and its contents
+]
+
+# [tool.hatch.build.targets.wheel] # <<< Removed specific target config, relying on general build config
+# packages = ["src/solai"]
+
+[tool.hatch.build.targets.wheel] 
+packages = ["src/solai"] # <<< Restore package definition
 
 [project.scripts]
 solai = "solai.cli:app"
 
-[tool.hatch.build]
-packages = ["src/solai"] 
+[project.optional-dependencies]
+ai = [
+  # install latest SWE-Agent from GitHub
+  "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent",
+  # install latest SWE-ReX from GitHub
+  "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
+]
+test = [
+  "pytest>=8.0.0",
+  "pytest-cov>=4.1.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=solai --cov-report=term-missing" 

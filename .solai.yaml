@@ -4,11 +4,7 @@ agent:
   repo_prompt: "Fix failing tests"
 
 env:
-# Default image tag for the execution environment.
-# Build yours with `solai image-rebuild` or provide your own.
-# This should match a locally available image tag.
   docker_image: foundry_sol:0.4.4
-# Allows using older `swe-rex` binary if needed via env var
   swe_rex_bin: swerex-remote
   post_startup_cmds:
     - ["forge", "test", "-q"]

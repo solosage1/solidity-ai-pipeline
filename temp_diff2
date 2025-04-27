@@ -1,0 +1,2777 @@
+diff --git a/.github/workflows/solai.yml b/.github/workflows/solai.yml
+index 4e3a800..2c0f57d 100644
+--- a/.github/workflows/solai.yml
++++ b/.github/workflows/solai.yml
+@@ -1,41 +1,146 @@
+ name: solai-phase2
+-on: push
++on: [push]
++
+ jobs:
+   smoke:
+-    runs-on: ubuntu-22.04
++    runs-on: ubuntu-latest
++
+     steps:
++      # 1) Grab your code
+       - uses: actions/checkout@v4
+ 
+-      # Ensure Python and build tools are available
+-      - name: Set up Python
++      # 2) Ensure Python 3.12
++      - name: Set up Python 3.12
+         uses: actions/setup-python@v4
+         with:
+           python-version: '3.12'
+ 
+-      - name: Install build dependencies
++      # Debug: Initial PATH state
++      - name: Debug - Initial PATH
+         run: |
+-          python -m pip install --upgrade pip
+-          pip install build hatchling
++          echo "Initial PATH: $PATH"
++          echo "GITHUB_PATH content:"
++          cat $GITHUB_PATH || echo "GITHUB_PATH not found"
+ 
+-      - uses: docker/setup-qemu-action@v3
+-      - uses: docker/setup-buildx-action@v3
+-      
++      # 3) Install build tool + build your wheel
++      - name: Install build tooling
++        run: |
++          python -m pip install --upgrade pip
++          python -m pip install build
+       - name: Build wheel
+         run: python -m build
+-      
+-      - name: Install solai
+-        run: pipx install --include-deps 'dist/solai-*.whl[ai]'
+-      
++
++      # 4) Install your wheel + AI backends via pip
++      - name: Install solai wheel (with AI extras)
++        run: |
++          wheel=$(ls dist/solai-*.whl)
++          echo "Installing wheel: $wheel"
++          python -m pip install --upgrade pip
++          python -m pip install "${wheel}[ai]"
++          python -m pip install pipx
++
++      # 4a) Install Slither
++      - name: Install Slither
++        run: python -m pip install slither-analyzer
++
++      # 4b) Install Foundry
++      - name: Install Foundry
++        run: |
++          # 1) Create Foundry directories
++          #    Note: Binaries actually land in $HOME/.config/.foundry/bin with this setup
++          mkdir -p "$HOME/.foundry/bin" 
++          mkdir -p "$HOME/.config/.foundry/bin"
++
++          # 2) Download foundryup installer directly to the (unused) bin directory
++          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
++          
++          # 3) Make it executable
++          chmod +x "$HOME/.foundry/bin/foundryup"
++
++          # 4) Add the foundryup script's dir to PATH *for this step only* 
++          export PATH="$HOME/.foundry/bin:$PATH"
++
++          # 5) Run foundryup to install the full suite
++          foundryup || echo "foundryup command failed with exit code $?"
++
++          # 6) Verify binary exists in the expected location
++          echo "--- Verifying forge install location ---"
++          ls -la "$HOME/.config/.foundry/bin/forge"
++          echo "--- End verification ---"
++
++          # 7) Persist the *correct* binary path for future steps
++          echo "Adding $HOME/.config/.foundry/bin to GITHUB_PATH"
++          echo "$HOME/.config/.foundry/bin" >> $GITHUB_PATH
++
++          # 8) Verify the installation using the correct path for this step
++          export PATH="$HOME/.config/.foundry/bin:$PATH"
++          echo "Current PATH (in step): $PATH"
++          which forge
++          forge --version
++
++      # 5) Set up Docker so `solai doctor` will see it
++      - name: Set up QEMU emulation
++        uses: docker/setup-qemu-action@v3
++
++      - name: Set up Docker Buildx (brings in Docker CLI & daemon)
++        uses: docker/setup-buildx-action@v3
++
++      # Debug: PATH after Docker setup
++      - name: Debug - Post Docker PATH
++        run: |
++          echo "PATH after Docker setup: $PATH"
++          echo "GITHUB_PATH content:"
++          cat $GITHUB_PATH
++          echo "Trying to locate forge:"
++          which forge || echo "forge not found in PATH"
++          ls -l "${HOME}/.foundry/bin"
++
++      # 6) Verify environment (Remove this step, move doctor call into smoke test)
++      # - name: solai doctor
++      #  run: |
++      #    echo "--- PATH check inside solai doctor step ---"
++      #    echo "PATH=$PATH"
++      #    which forge || echo "forge still not found by which in solai doctor step"
++      #    echo "--- End PATH check ---"
++      #    solai doctor
++
++      # 7) Full end-to-end smoke test
+       - name: Smoke test
+         run: |
++          set -e
+           mkdir smoke && cd smoke
+           git init .
+           echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
+           cat > Y.t.sol << 'EOF'
+-          pragma solidity ^0.8.26; import "forge-std/Test.sol"; contract T is Test {
++          pragma solidity ^0.8.26; import "forge-std/Test.sol";
++          contract T is Test {
+             function testFail() public { assertTrue(false); }
+           }
+           EOF
++
++          # init
+           solai init
++
++          # Create top-level Makefile to include the generated .inc
++          echo 'include Makefile.inc' > Makefile
++
++          # bootstrap
+           make bootstrap-solai
++
++          # Build the docker image required by solai
++          echo "--- Building solai Docker image ---"
++          docker build -t solai-smoke-test:latest -f ../src/solai/docker/foundry_sol.Dockerfile ..
++          echo "--- Docker image build finished ---"
++
++          # Update .solai.yaml with the actual image tag used
++          echo "--- Updating .solai.yaml with image tag ---"
++          python -c 'import yaml; from pathlib import Path; cfg_path = Path(".solai.yaml"); data = yaml.safe_load(cfg_path.read_text()); data["env"]["docker_image"] = "solai-smoke-test:latest"; cfg_path.write_text(yaml.safe_dump(data)); print(f"Updated {cfg_path} with image tag: solai-smoke-test:latest")'
++          echo "--- .solai.yaml update finished ---"
++
++          # Verify environment *after* init, bootstrap, build, and config update
++          echo "--- Running solai doctor after init/bootstrap/build/config-update ---"
++          solai doctor
++          echo "--- solai doctor finished ---"
++
++          # run once
+           solai run --once --max-concurrency 1 
+\ No newline at end of file
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..8ec9a5b
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,26 @@
++# Byte-compiled / optimized / DLL files
++__pycache__/
++*.py[cod]
++*$py.class
++
++# Distribution / packaging
++dist/
++build/
++*.egg-info/
++
++# Virtual environments
++.venv/
++venv/
++env/
++ENV/
++
++# Solai working state
++.solai/worktrees/
++.solai/logs/
++
++# Logs
++*.log
++
++# IDE / OS cruft
++.DS_Store
++*.swp 
+\ No newline at end of file
+diff --git a/.solai.yaml b/.solai.yaml
+new file mode 100644
+index 0000000..2a05563
+--- /dev/null
++++ b/.solai.yaml
+@@ -0,0 +1,19 @@
++agent:
++  model: gpt4o-2025-04-25      # pin to dated model
++  usd_cap: 5
++  repo_prompt: "Fix failing tests"
++
++env:
++  docker_image: foundry_sol:0.4.4
++  swe_rex_bin: swerex-remote
++  post_startup_cmds:
++    - ["forge", "test", "-q"]
++
++task:
++  branch: fix-demo
++  max_attempts: 1
++
++worktrees_dir: .solai/worktrees
++
++backlog:
++  file: backlog.yaml 
+\ No newline at end of file
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..bc932b2
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,2 @@
++# Main Makefile for solai
++include Makefile.inc 
+\ No newline at end of file
+diff --git a/Makefile.inc b/Makefile.inc
+new file mode 100644
+index 0000000..9850c7f
+--- /dev/null
++++ b/Makefile.inc
+@@ -0,0 +1,17 @@
++# >>> solai autogenerated
++bootstrap-solai:
++	pipx ensurepath
++	@if command -v solai >/dev/null; then \
++	    pipx upgrade solai --include-deps || true; \
++	else \
++	    pipx install --include-deps solai[ai]; \
++	fi
++	# Ensure SWE-Agent & SWE-ReX are present in the same venv
++	pipx inject --force solai \
++	    git+https://github.com/princeton-nlp/SWE-agent.git@main \
++	    git+https://github.com/SWE-agent/SWE-ReX.git@main
++	solai doctor
++
++solai-run:
++	solai run
++# <<< solai autogenerated 
+\ No newline at end of file
+diff --git a/README.md b/README.md
+index 00217af..c725f15 100644
+--- a/README.md
++++ b/README.md
+@@ -4,29 +4,81 @@ Plug-and-play AI improvement pipeline for Solidity projects.
+ 
+ ## Installation
+ 
++From PyPI (coming soon):
+ ```bash
+-pipx install solai
++pip install solai[ai]
+ ```
+ 
++From source:
++```bash
++# Clone the repository
++git clone https://github.com/solosage1/solidity-ai-pipeline.git
++cd solidity-ai-pipeline
++
++# Build and install
++python -m pip install build
++python -m build
++pip install dist/solai-*.whl[ai]
++
++# Verify installation
++make bootstrap-solai
++```
++
++The `bootstrap-solai` make target will:
++1. Verify the environment with `solai doctor`
++2. Ensure all dependencies are properly installed
++3. Set up any necessary local development tools
++
++## SWE-ReX Authentication
++
++The SWE-ReX service uses API key authentication. When making requests to the service:
++
++1. The executable is named `swerex-remote` (not `swe-rex`)
++2. Authentication is done via the `X-API-Key` HTTP header
++3. The API key must be provided in the following ways:
++   - For HTTP requests: Include header `X-API-Key: your_api_key`
++   - For CLI usage: Use `swerex-remote --api-key your_api_key`
++   - For Python: Use headers dictionary `{"X-API-Key": "your_api_key"}`
++
+ ## Quick Start
+ 
+ ```bash
+ # In your Solidity project directory:
+ solai init
+ make bootstrap-solai
+-make solai-run
++solai run --once  # Run once and exit
++solai run         # Run continuously (default)
+ ```
+ 
+ ## Requirements
+ 
+ - Python 3.12+
+ - Docker
+-- Foundry
++- Foundry (installed via foundryup - automated in CI, manual install needed locally)
++    ```bash
++    # Local installation:
++    curl -L https://foundry.paradigm.xyz | bash
++    source ~/.bashrc  # or restart your terminal
++    foundryup
++    ```
+ - Slither
+-- SWE-Agent and SWE-ReX
++- SWE-ReX (installed automatically with solai[ai])
++- SWE-Agent (installed automatically with solai[ai])
++
++## Environment Notes
++
++- **WSL2** (Windows): For Windows users, run `solai` inside WSL2 to ensure full Docker & POSIX support.
++- **Docker RAM**: Allocate at least **6 GB** to Docker (Settings → Resources → Memory) for Foundry and SWE-Agent.
++- **Logs**: Detailed run output is written to `.solai/logs/run.log`; inspect this for troubleshooting.
++
++## Docker RAM Requirements
++
++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
+ 
+ ## Implementation Details
+ 
+-For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
++For detailed summaries of the implementation phases, please refer to the documents in the specs directory:
+ 
+-- [Phase 1 Summary](specs/phase1_summary.md) 
+\ No newline at end of file
++- [Phase 1 Summary (v0.4.0)](specs/phase1_summary.md)
++- [Phase 2 Summary (v0.4.2)](specs/phase2_summary.md) 
+\ No newline at end of file
+diff --git a/bootstrap/install_python_env.sh b/bootstrap/install_python_env.sh
+new file mode 100755
+index 0000000..a927afa
+--- /dev/null
++++ b/bootstrap/install_python_env.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++set -euo pipefail
++echo "▶ Creating Python 3.12 virtualenv (.venv)"
++python3.12 -m venv .venv
++source .venv/bin/activate
++pip install -U pip
++# install core CLI deps
++pip install typer rich pyyaml
++# install solai itself with the [ai] extra (this pulls SWE-Agent & SWE-ReX from GitHub)
++pip install -e ".[ai]"
++
++deactivate 
+\ No newline at end of file
+diff --git a/gitignore_snip.txt b/gitignore_snip.txt
+new file mode 100644
+index 0000000..78dd5c0
+--- /dev/null
++++ b/gitignore_snip.txt
+@@ -0,0 +1,4 @@
++# >>> solai
++.solai/worktrees/
++.solai/logs/
++# <<< solai 
+\ No newline at end of file
+diff --git a/pyproject.toml b/pyproject.toml
+index 6bfb613..96958ff 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
+ 
+ [project]
+ name            = "solai"
+-version         = "0.4.0"
++version         = "0.4.2"
+ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
+ readme          = "README.md"
+ requires-python = ">=3.12"
+@@ -13,11 +13,32 @@ authors         = [{name = "SoloLabs"}]
+ dependencies    = [
+   "typer>=0.12",
+   "rich>=13",
+-  "pyyaml>=6"
++  "pyyaml>=6",
++  # AI dependencies are now provided via the [ai] extra below
+ ]
+ 
++[tool.hatch.build]
++# only-packages = true  # <<< Commented out to allow non-package data
++include = [
++  "/src/solai", # Include the main package directory and its contents
++]
++
++# [tool.hatch.build.targets.wheel] # <<< Removed specific target config, relying on general build config
++# packages = ["src/solai"]
++
++[tool.hatch.build.targets.wheel] 
++packages = ["src/solai"] # <<< Restore package definition
++
+ [project.scripts]
+ solai = "solai.cli:app"
+ 
+-[tool.hatch.build]
+-packages = ["src/solai"] 
+\ No newline at end of file
++[project.optional-dependencies]
++ai = [
++  # install latest SWE-Agent from GitHub
++  "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent",
++  # install latest SWE-ReX from GitHub
++  "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
++]
++
++[tool.hatch.metadata]
++allow-direct-references = true 
+\ No newline at end of file
+diff --git a/specs/phase2_summary.md b/specs/phase2_summary.md
+new file mode 100644
+index 0000000..c022966
+--- /dev/null
++++ b/specs/phase2_summary.md
+@@ -0,0 +1,172 @@
++# Phase 2 Implementation Summary: `solai` Package v0.4.2
++
++This document summarizes the significant changes and additions made during Phase 2 of the `solidity-ai-pipeline` project, culminating in version `0.4.2` of the `solai` package. This phase focused on integrating the core AI agent functionality and building the task execution pipeline.
++
++Refer to the main [README.md](../README.md) for quick start instructions and general usage information.
++
++## 1. Goal: AI Integration and Task Execution
++
++The primary objective of Phase 2 was to move beyond the foundational package structure and implement the core logic for running AI agents (specifically SWE-Agent orchestrated via SWE-ReX) to automatically attempt fixes within a Solidity project based on configuration.
++
++## 2. Version Update
++
++- The package version was bumped to `0.4.2` in `pyproject.toml` and `src/solai/__init__.py` (implied).
++
++## 3. Packaging and Dependencies (`pyproject.toml`)
++
++- **Version:** Updated to `0.4.2`.
++- **Dependencies:**
++    - Core dependencies remain `typer`, `rich`, `pyyaml`.
++    - **`[ai]` Extra:** Introduced an optional dependency group `[ai]` to handle the AI backend installations. This extra includes:
++        - `sweagent` (installed directly from the `princeton-nlp/SWE-agent` GitHub repository).
++        - `swe-rex` (installed directly from the `SWE-agent/SWE-ReX` GitHub repository).
++- **Build Configuration:**
++    - Added `only-packages = true` to ensure proper package building
++    - Configured wheel target to include `src/solai` package
++    - Properly handles src-layout Python package structure
++- **Metadata:** Added `allow-direct-references = true` under `[tool.hatch.metadata]` to support the direct Git dependencies.
++
++## 4. Installation and Bootstrapping (`README.md`, `Makefile.inc`)
++
++- **Installation Process:** The recommended installation method (both from source and potentially PyPI) is `pip install .[ai]` (or the built wheel `dist/solai-*.whl[ai]`). This installs `solai` along with `sweagent` and `swe-rex` from their Git repositories due to the `[ai]` extra.
++- **Bootstrapping:** Use `make bootstrap-solai` to:
++    - Ensure `pipx` is available and on the PATH (though `solai` itself is installed via `pip`).
++    - Run `solai doctor` to verify the complete environment (Python, Docker, Foundry, Slither, SWE-ReX, SWE-Agent, configured Docker image).
++- **`Makefile.inc`:** The `bootstrap-solai` target primarily runs `pipx ensurepath` and `solai doctor`. It *no longer* handles the installation of `solai` or its dependencies itself (this is done via `pip install`). The `pipx inject` lines shown in earlier diffs were part of an intermediate step and removed.
++
++## 5. Configuration (`.solai.yaml` Template)
++
++The template configuration file (`src/solai/templates/dot_solai.yaml`) was restructured and expanded:
++
++- **`agent`:**
++    - `model`: Now requires pinning to a dated model version (e.g., `gpt4o-2025-04-25`).
++    - `usd_cap`: Kept from Phase 1.
++    - `repo_prompt`: Added field for the high-level task description given to the agent (default: "Fix failing tests").
++- **`env`:**
++    - `docker_image`: Changed to use a placeholder format `ghcr.io/yourorg/foundry_sol@sha256:<YOUR_DIGEST_HERE>` by default. *Note: The CI workflow builds and uses a *tag* (`solai-smoke-test:latest`) and updates the config file in the CI environment. The `doctor` command checks for the *tag* specified in the config. The `image-rebuild` command currently builds a tag like `foundry_sol:0.4.1` but doesn't integrate with the main workflow or config update automatically.*
++    - `post_startup_cmds`: Format changed to a list of command lists (e.g., `[["forge", "test", "-q"]]`).
++- **`task`:** New section added:
++    - `branch`: Specifies the Git branch name the agent should create/use (default: `fix-demo`).
++    - `max_attempts`: Placeholder for future retry logic (default: 1).
++- **`worktrees_dir`:** Path for temporary worktrees (default: `.solai/worktrees`).
++- **`backlog`:**
++    - `file`: Location of the backlog definition (default: `backlog.yaml`).
++
++## 6. CLI Enhancements (`cli.py`)
++
++- **`init` command:**
++    - Added a check after copying templates. If the generated `.solai.yaml` contains the placeholder Docker image digest, it prints a warning (`typer.secho`) prompting the user to run `solai image-rebuild` (or manually update).
++- **`run` command:**
++    - **Parameters:**
++        - `--once`/`--watch`: Changed the flag logic. Default is now `--watch` (run continuously), use `--once` to exit after one pass.
++        - `--max-concurrency`: Kept from Phase 1.
++        - `--log-file`: Added option to specify the run log file path (default: `.solai/logs/run.log`).
++    - **Functionality:** Calls the newly implemented `run_backlog` function from `runner.py`.
++- **`doctor` command:**
++    - Calls the updated `doctor` function (`run_doctor`) from `runner.py`.
++- **`image-rebuild` command (New):**
++    - Added a new command `solai image-rebuild`.
++    - Calls the `rebuild_image` helper function from `runner.py`.
++    - Intended to automate building the `foundry_sol` Docker image and potentially updating the config (currently just prints the tag/digest).
++
++## 7. Core Logic Implementation (`runner.py`)
++
++The `runner.py` module saw the most significant changes, replacing the Phase 1 stubs with functional logic.
++
++- **`_run` Helper:** Introduced a helper function to execute shell commands, stream their stdout/stderr to the console and optionally to a log file, and raise an error on non-zero exit codes.
++- **`image_present`:** Updated to check for the existence of a Docker image based on its *tag* (Repository:Tag format) as specified in `.solai.yaml`.
++- **`doctor` function:**
++    - **Checks:**
++        - Verifies Python version (`>=3.12`).
++        - Checks core tools: `pipx`, `docker` CLI/engine, `forge`, `slither`, `swerex-remote`.
++        - *Optionally* checks for `sweagent`, printing a warning if missing (as it's installed via the `[ai]` extra).
++        - Checks if the Docker image *tag* specified in `.solai.yaml` (`env.docker_image`) exists locally using `image_present`.
++    - **Guidance:** Prints informational messages about WSL2 and Docker RAM.
++    - **Removed:** No longer attempts to automatically build the Docker image.
++    - **Binary Name:** The check for the SWE-ReX binary now looks for `swerex-remote` (the name installed by `pip install swe-rex`), replacing the previous check for `swe-rex`.
++- **`rebuild_image` function (New):**
++    - Builds the Docker image using `src/solai/docker/foundry_sol.Dockerfile` with a hardcoded tag (e.g., `foundry_sol:0.4.1`).
++    - Prints the built image tag to the console.
++    - *Does not push the image or update `.solai.yaml`.*
++- **`run_backlog` function (Implemented):**
++    - **Configuration Loading:** Reads settings from the specified config file (`.solai.yaml`).
++    - **Model Date Pinning:** Validates that the `agent.model` string includes a date suffix (e.g., `-YYYY-MM-DD`).
++    - **Logging:** Ensures the log directory exists and opens the specified log file for appending.
++    - **Worker Thread (`_worker`):**
++        - Uses `concurrent.futures.ThreadPoolExecutor` to manage workers (though currently runs one task at a time in the main loop).
++        - **Temporary Worktree:** Creates a temporary directory.
++        - **Git Operations:** Clones the current repository into the worktree, checks out a new branch based on `task.branch` config.
++        - **SWE-Agent Configuration:** Dynamically generates a `swe.yaml` file inside the worktree, configuring `sweagent` with:
++            - `open_pr: false`
++            - `apply_patch_locally: true`
++            - `problem_statement.repo_path: .`
++            - `problem_statement.text`: From `agent.repo_prompt` config.
++            - `env.deployment.image`: From `env.docker_image` config.
++        - **Agent Execution:** Runs `swe-rex run --image <image_tag> -- sweagent run ...` using the `_run` helper, logging output. Passes the generated `swe.yaml` and specifies `--output-tar patch.tar`.
++            - **Binary Name:** The command executed is now `swerex-remote` by default, read from the `env.swe_rex_bin` config setting. This can be overridden globally using the `SWE_REX_BIN` environment variable for backward compatibility if the binary is still named `swe-rex` on a system.
++        - **Patch Handling:**
++            - Checks if `patch.tar` was created.
++            - Extracts the tarball.
++            - Finds the resulting `.diff` or `.patch` file.
++            - **Validation:** Uses `git apply --stat` to check the patch and extracts insertion/deletion counts. Rejects patches with 0 LOC, > 2000 LOC, or > 100KB file size.
++            - **Application:** Applies the patch using `git apply`.
++        - **Testing:** Runs `forge test -q` within the worktree after applying the patch.
++        - **Outcome:** Prints success ("🎉 ... tests green") or failure messages ("Tests still failing", "No patch produced", etc.).
++    - **Main Loop:**
++        - Runs the `_worker` function.
++        - If `--once` is specified, breaks after the first run.
++        - If `--watch` (default), sleeps for 30 seconds and repeats.
++        - Includes basic exception handling around the worker execution.
++
++## 8. Docker Environment (`src/solai/docker/`)
++
++- No changes were made to the `foundry_sol.Dockerfile` itself in this phase. The interaction model changed via the `image-rebuild` command and configuration references (tags).
++
++## 9. Continuous Integration (`.github/workflows/solai.yml`)
++
++- A new GitHub Actions workflow was added (`solai-phase2`).
++- **Trigger:** Runs on push events.
++- **Job (`smoke`):**
++    - Runs on `ubuntu-latest`.
++    - **Python Environment:**
++        - Sets up Python 3.12 using `actions/setup-python@v4` to match package requirements (`>=3.12`).
++        - This ensures both build and installation steps use the correct Python version.
++    - **Build Process:**
++        - Installs the PEP 517 build frontend (`python -m pip install build`).
++        - Builds the `solai` wheel (`python -m build`).
++    - **Package Installation & Verification:**
++        - Locates the built wheel file.
++        - Installs the wheel with its AI extras using `pip install "${wheel}[ai]".
++        - Installs Slither explicitly (`pip install slither-analyzer`).
++        - Installs Foundry using a multi-step process involving `curl` and `foundryup`, ensuring binaries are correctly placed and PATH is updated.
++        - *Does not* run `solai doctor` at this stage.
++    - **Smoke Test:**
++        - Creates a temporary directory (`smoke/`) and sets up a minimal Solidity project with a failing test.
++        - Runs `solai init`.
++        - Runs `make bootstrap-solai` (which now primarily runs `solai doctor`).
++        - **Builds the required Docker image** (`docker build -t solai-smoke-test:latest ...`).
++        - **Updates the `.solai.yaml** in the `smoke/` directory to use the `solai-smoke-test:latest` tag via an inline python script.
++        - **Runs `solai doctor** to verify the environment *after* all setup, including the Docker image build and config update.
++        - Runs the core workflow `solai run --once --max-concurrency 1`.
++
++## 10. Development Environment Setup (`bootstrap/`)
++
++- Added `bootstrap/install_python_env.sh`: A script to create a Python 3.12 virtual environment (`.venv`), install core dependencies (`typer`, `rich`, `pyyaml`), and install `solai` in editable mode with the `[ai]` extras (`pip install -e .[ai]`). Useful for local development.
++
++## 11. Documentation (`README.md`)
++
++- Updated significantly:
++    - Installation instructions clarified to use `pip install .[ai]` (or the wheel) for both `solai` and AI dependencies.
++    - Requirements updated (Slither, SWE-Agent, SWE-ReX installed via `[ai]` extra).
++    - SWE-ReX authentication details added.
++    - Environment notes (WSL2, Docker RAM, Logs) added/updated.
++    - Phase summary links updated.
++
++## 12. Gitignore
++
++- Added a root `.gitignore` file with common Python patterns, IDE files, and `solai` specific directories (`.solai/worktrees/`, `.solai/logs/`).
++- Updated `src/solai/templates/gitignore_snip.txt` (no functional change, perhaps formatting).
++
++## 13. Conclusion
++
++Phase 2 successfully implemented the core AI task execution pipeline. `solai` can now be configured to use SWE-Agent (via SWE-ReX) within a specified Docker environment to attempt automated fixes for issues like failing tests. Key additions include the streamlined installation process via `make bootstrap-solai`, the `run_backlog` implementation, the `image-rebuild` command, updated `doctor` checks, CI smoke tests, and improved documentation/installation instructions. The project is now capable of performing its primary function, with further refinements and features planned for subsequent phases. 
+\ No newline at end of file
+diff --git a/src/solai/__pycache__/__init__.cpython-313.pyc b/src/solai/__pycache__/__init__.cpython-313.pyc
+new file mode 100644
+index 0000000..1cc17ce
+Binary files /dev/null and b/src/solai/__pycache__/__init__.cpython-313.pyc differ
+diff --git a/src/solai/__pycache__/cli.cpython-313.pyc b/src/solai/__pycache__/cli.cpython-313.pyc
+new file mode 100644
+index 0000000..5254418
+Binary files /dev/null and b/src/solai/__pycache__/cli.cpython-313.pyc differ
+diff --git a/src/solai/__pycache__/runner.cpython-313.pyc b/src/solai/__pycache__/runner.cpython-313.pyc
+new file mode 100644
+index 0000000..d8da820
+Binary files /dev/null and b/src/solai/__pycache__/runner.cpython-313.pyc differ
+diff --git a/src/solai/cli.py b/src/solai/cli.py
+index cb02a10..cca6f8a 100644
+--- a/src/solai/cli.py
++++ b/src/solai/cli.py
+@@ -1,5 +1,5 @@
+ from pathlib import Path
+-import shutil, subprocess, platform, importlib.resources as pkg
++import shutil, subprocess, platform, importlib.resources as pkg, yaml
+ import typer
+ from solai.runner import run_backlog, doctor as run_doctor
+ 
+@@ -31,13 +31,25 @@ def init(update: bool = typer.Option(False, "-u", "--update",
+     
+     typer.echo("✅  Run `make bootstrap-solai`")
+ 
++    # ---- placeholder digest warning ------------------------------------
++    cfg = Path(".solai.yaml")
++    if cfg.exists():
++        docker_image = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
++        if "placeholder_digest" in docker_image:
++            typer.secho(
++                "⚠  .solai.yaml still has placeholder_digest — "
++                "run `solai image-rebuild` and update the file.",
++                fg="yellow")
++
+ # ----- run ---------------------------------------------------
+ @app.command()
+ def run(config: Path = Path(".solai.yaml"),
+-        once: bool = typer.Option(True, help="Exit after backlog drains"),
+-        max_concurrency: int = typer.Option(4)):
++        once: bool = typer.Option(False, "--once/--watch",
++                                  help="Exit after one backlog pass"),
++        max_concurrency: int = typer.Option(4),
++        log_file: Path = typer.Option(".solai/logs/run.log")):
+     """Run backlog tasks."""
+-    run_backlog(config, once, max_concurrency)
++    run_backlog(config, once, max_concurrency, log_file)
+ 
+ # ----- doctor -----------------------------------------------
+ @app.command()
+@@ -45,5 +57,11 @@ def doctor():
+     """Environment self-test."""
+     run_doctor()
+ 
++@app.command("image-rebuild")
++def image_rebuild():
++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
++    from solai.runner import rebuild_image
++    rebuild_image()
++
+ if __name__ == "__main__":
+     app() 
+\ No newline at end of file
+diff --git a/src/solai/runner.py b/src/solai/runner.py
+index ee69e89..3161cc6 100644
+--- a/src/solai/runner.py
++++ b/src/solai/runner.py
+@@ -1,67 +1,144 @@
+-import subprocess, sys, json, os, importlib
++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
+ from pathlib import Path
+ from concurrent.futures import ThreadPoolExecutor
+ 
+-# ------------ doctor ----------------------------------------
+-def _check(cmd: str, name: str):
+-    try:
+-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+-        print(f"✓ {name}")
+-    except subprocess.CalledProcessError as e:
+-        print(f"✗ {name} not found")
+-        if "docker build" in cmd:
+-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+-        sys.exit(1)
+-
+-def _check_python_package(package: str):
+-    try:
+-        importlib.import_module(package)
+-        print(f"✓ {package} importable")
+-    except ImportError:
+-        print(f"✗ {package} not installed")
+-        sys.exit(1)
++# ── helpers ────────────────────────────────────────────────
++def _run(cmd, cwd, log):
++    """Run cmd streaming to console & optional log."""
++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
++    for line in p.stdout:
++        print(line, end="")
++        if log: log.write(line)
++    p.wait()
++    if p.returncode:
++        raise subprocess.CalledProcessError(p.returncode, cmd)
+ 
+ def image_present(tag: str) -> bool:
+-    import json, subprocess
+-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
+-                                  shell=True).decode().strip()
++    out = subprocess.check_output(
++        f"docker images --no-trunc --format '{{{{.Digest}}}}' {tag}",
++        shell=True, text=True).strip()
+     return bool(out)
+ 
++# ── doctor ────────────────────────────────────────────────
+ def doctor():
+     if sys.version_info < (3, 12):
+-        print("✗ Python 3.12+ required")
+-        sys.exit(1)
+-
+-    # Basic CLI tools
+-    checks = [
+-        ("pipx --version", "pipx available"),
+-        ("docker --version", "Docker CLI"),
+-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
+-        ("forge --version", "Foundry"),
+-        ("slither --version", "Slither")
++        print("✗ Python 3.12+ required"); sys.exit(1)
++    if platform.system() == "Windows":
++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
++
++    # Core checks (swe-rex is core, sweagent is not)
++    core_checks = [
++      ("pipx --version", "pipx available"),
++      ("docker --version", "Docker CLI"),
++      ("docker info --format \'{{.ServerVersion}}\'", "Docker engine"),
++      ("forge --version", "Foundry"),
++      ("slither --version", "Slither"),
+     ]
+-    for cmd, name in checks:
+-        _check(cmd, name)
+-
+-    # Docker image
+-    img = "foundry_sol"
+-    tag = "0.4.0"
+-    if not image_present(f"{img}:{tag}"):
+-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
++    # Check for swerex-remote binary presence
++    if not shutil.which("swerex-remote"):
++        print("✗ SWE-ReX not found - did pip install succeed?"); sys.exit(1)
++    else:
++        print("✓ SWE-ReX")
++
++    for cmd, name in core_checks:
+         try:
+-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
+-        except subprocess.CalledProcessError as e:
+-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+-            sys.exit(1)
++            subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++            print(f"✓ {name}")
++        except (subprocess.CalledProcessError, FileNotFoundError):
++            print(f"✗ {name} check failed. Please ensure it's installed and in PATH."); sys.exit(1)
+ 
++    # Optional check for sweagent (needs manual source install)
++    try:
++        subprocess.check_output("sweagent --version", shell=True, stderr=subprocess.STDOUT)
++        print(f"✓ SWE-Agent")
++    except (subprocess.CalledProcessError, FileNotFoundError):
++        print(f"⚠ SWE-Agent missing. Install from source: git clone https://github.com/princeton-nlp/SWE-agent.git && cd SWE-agent && pip install -e .")
++
++    cfg = Path(".solai.yaml")
++    if cfg.exists():
++        tag = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
++        if not image_present(tag):
++            print("✗ Image tag missing – run `solai image-rebuild`"); sys.exit(1)
++
++    print("ℹ  Ensure Docker Desktop memory ≥ 6 GB")
+     print("🚀  doctor finished – environment ready")
+ 
+-# ------------ backlog runner (placeholder) -------------------
+-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
+-    if not config_path.exists():
+-        print("Config", config_path, "not found"); sys.exit(1)
+-    
+-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
++# ── image rebuild helper ──────────────────────────────────
++def rebuild_image():
++    img_tag = "foundry_sol:0.4.1"
++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
++                   check=True)
++    print("✓ image built:", img_tag)
++    print("→ Update .solai.yaml with the new tag")
++
++# ── backlog runner ───────────────────────────────────────
++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
++    cfg = yaml.safe_load(cfg_path.read_text())
++    # ensure log directory exists
++    log_path.parent.mkdir(parents=True, exist_ok=True)
++    model = cfg["agent"]["model"]
++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
++
++    def _worker():
++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp:
++            workdir = Path(tmp) / "repo"
++            _run(["git", "clone", ".", str(workdir)], Path("."), None)
++            _run(["git", "-C", str(workdir), "checkout", "-b", cfg["task"]["branch"]], 
++                 Path("."), None)
++            with open(log_path, "a") as log:
++                # Write SWE-Agent config
++                (workdir / "swe.yaml").write_text(f"""
++open_pr: false
++apply_patch_locally: true
++problem_statement:
++  repo_path: .
++  text: "{cfg['agent']['repo_prompt']}"
++env:
++  deployment:
++    image: {cfg['env']['docker_image']}
++""")
++
++                # Run SWE-Agent inside swe-rex
++                _run([os.getenv("SWE_REX_BIN", "swerex-remote"), "run",
++                      "--image", cfg["env"]["docker_image"],
++                      "--", "sweagent", "run", "--config", "swe.yaml",
++                      "--output-tar", "patch.tar"], workdir, log)
++
++                if not (workdir / "patch.tar").exists():
++                    print("No patch produced"); return
++
++                _run(["tar", "-xf", "patch.tar", "-C", "."], workdir, log)
++                diff_files = list(workdir.glob("*.diff")) + list(workdir.glob("*.patch"))
++                if not diff_files:
++                    print("No diff inside patch tar"); return
++                diff = diff_files[0]
++
++                stat = subprocess.check_output(
++                    f"git apply --stat {diff}", shell=True, cwd=workdir, text=True)
++                m = re.search(r'(\d+) insertions?\(\+\), (\d+) deletions?\(-\)', stat)
++                ins = int(m.group(1)) if m else 0
++                dels = int(m.group(2)) if m else 0
++                loc = ins + dels
++                if loc == 0 or loc > 2000 or diff.stat().st_size > 100_000:
++                    print("Patch size invalid"); return
++
++                _run(["git", "apply", str(diff)], workdir, log)
++                test_res = subprocess.run(["forge", "test", "-q"], cwd=workdir)
++                if test_res.returncode:
++                    print("Tests still failing"); return
++
++                print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
++
++    while True:
++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
++            future = pool.submit(_worker)
++            try:
++                future.result()
++            except Exception as e:
++                print(f"Worker failed: {e}")
+         if once:
+-            print("Will exit after backlog drains") 
+\ No newline at end of file
++            break
++        time.sleep(30) 
+\ No newline at end of file
+diff --git a/src/solai/templates/Makefile.inc b/src/solai/templates/Makefile.inc
+index 2354ef5..1e20cd1 100644
+--- a/src/solai/templates/Makefile.inc
++++ b/src/solai/templates/Makefile.inc
+@@ -4,7 +4,7 @@ bootstrap-solai:
+ 	@if command -v solai >/dev/null; \
+ 	    then pipx upgrade solai || true; \
+ 	    else pipx install solai; fi
+-	solai doctor
++	# solai doctor  # <<< Removed premature doctor check
+ 
+ solai-run:
+ 	solai run
+diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
+index b247b3d..4d9ddde 100644
+--- a/src/solai/templates/dot_solai.yaml
++++ b/src/solai/templates/dot_solai.yaml
+@@ -1,9 +1,23 @@
+ agent:
+-  model: gpt4o
++  model: gpt4o-2025-04-25      # pin to dated model
+   usd_cap: 5
++  repo_prompt: "Fix failing tests"
++
+ env:
+-  docker_image: foundry_sol:0.4.0
+-  post_startup_cmds: ["forge test -q"]
++# Default image tag for the execution environment.
++# Build yours with `solai image-rebuild` or provide your own.
++# This should match a locally available image tag.
++  docker_image: foundry_sol:0.4.4
++# Allows using older `swe-rex` binary if needed via env var
++  swe_rex_bin: swerex-remote
++  post_startup_cmds:
++    - ["forge", "test", "-q"]
++
++task:
++  branch: fix-demo
++  max_attempts: 1
++
++worktrees_dir: .solai/worktrees
++
+ backlog:
+-  file: backlog.yaml
+-worktrees_dir: .solai/worktrees 
+\ No newline at end of file
++  file: backlog.yaml 
+\ No newline at end of file
+diff --git a/temp_diff b/temp_diff
+new file mode 100644
+index 0000000..725e7e5
+--- /dev/null
++++ b/temp_diff
+@@ -0,0 +1,281 @@
++diff --git a/README.md b/README.md
++index 00217af..a38f710 100644
++--- a/README.md
+++++ b/README.md
++@@ -25,6 +25,11 @@ make solai-run
++ - Slither
++ - SWE-Agent and SWE-ReX
++ 
+++## Docker RAM Requirements
+++
+++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
+++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
+++
++ ## Implementation Details
++ 
++ For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
++diff --git a/pyproject.toml b/pyproject.toml
++index 6bfb613..276f07a 100644
++--- a/pyproject.toml
+++++ b/pyproject.toml
++@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
++ 
++ [project]
++ name            = "solai"
++-version         = "0.4.0"
+++version         = "0.4.1"
++ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
++ readme          = "README.md"
++ requires-python = ">=3.12"
++@@ -13,7 +13,9 @@ authors         = [{name = "SoloLabs"}]
++ dependencies    = [
++   "typer>=0.12",
++   "rich>=13",
++-  "pyyaml>=6"
+++  "pyyaml>=6",
+++  "sweagent>=1.0.0",
+++  "swe-rex>=1.0.0"
++ ]
++ 
++ [project.scripts]
++diff --git a/src/solai/cli.py b/src/solai/cli.py
++index cb02a10..b20805e 100644
++--- a/src/solai/cli.py
+++++ b/src/solai/cli.py
++@@ -34,10 +34,12 @@ def init(update: bool = typer.Option(False, "-u", "--update",
++ # ----- run ---------------------------------------------------
++ @app.command()
++ def run(config: Path = Path(".solai.yaml"),
++-        once: bool = typer.Option(True, help="Exit after backlog drains"),
++-        max_concurrency: int = typer.Option(4)):
+++        once: bool = typer.Option(False, "--once/--watch",
+++                                  help="Exit after one backlog pass"),
+++        max_concurrency: int = typer.Option(4),
+++        log_file: Path = typer.Option(".solai/logs/run.log")):
++     """Run backlog tasks."""
++-    run_backlog(config, once, max_concurrency)
+++    run_backlog(config, once, max_concurrency, log_file)
++ 
++ # ----- doctor -----------------------------------------------
++ @app.command()
++@@ -45,5 +47,11 @@ def doctor():
++     """Environment self-test."""
++     run_doctor()
++ 
+++@app.command("image-rebuild")
+++def image_rebuild():
+++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
+++    from solai.runner import rebuild_image
+++    rebuild_image()
+++
++ if __name__ == "__main__":
++     app() 
++\ No newline at end of file
++diff --git a/src/solai/runner.py b/src/solai/runner.py
++index ee69e89..0c32ab3 100644
++--- a/src/solai/runner.py
+++++ b/src/solai/runner.py
++@@ -1,67 +1,119 @@
++-import subprocess, sys, json, os, importlib
+++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
++ from pathlib import Path
++ from concurrent.futures import ThreadPoolExecutor
++ 
++-# ------------ doctor ----------------------------------------
++-def _check(cmd: str, name: str):
++-    try:
++-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++-        print(f"✓ {name}")
++-    except subprocess.CalledProcessError as e:
++-        print(f"✗ {name} not found")
++-        if "docker build" in cmd:
++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++-        sys.exit(1)
++-
++-def _check_python_package(package: str):
++-    try:
++-        importlib.import_module(package)
++-        print(f"✓ {package} importable")
++-    except ImportError:
++-        print(f"✗ {package} not installed")
++-        sys.exit(1)
++-
++-def image_present(tag: str) -> bool:
++-    import json, subprocess
++-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
++-                                  shell=True).decode().strip()
+++# ── helpers ────────────────────────────────────────────────
+++def _run(cmd, cwd, log):
+++    """Run cmd streaming to console & optional log."""
+++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
+++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+++    for line in p.stdout:
+++        print(line, end="")
+++        if log: log.write(line)
+++    p.wait()
+++    if p.returncode:
+++        raise subprocess.CalledProcessError(p.returncode, cmd)
+++
+++def image_present(digest: str) -> bool:
+++    out = subprocess.check_output(
+++        f"docker images --no-trunc --format '{{{{.Digest}}}}' {digest}",
+++        shell=True, text=True).strip()
++     return bool(out)
++ 
+++# ── doctor ────────────────────────────────────────────────
++ def doctor():
++     if sys.version_info < (3, 12):
++-        print("✗ Python 3.12+ required")
++-        sys.exit(1)
+++        print("✗ Python 3.12+ required"); sys.exit(1)
+++    if platform.system() == "Windows":
+++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
++ 
++-    # Basic CLI tools
++     checks = [
++-        ("pipx --version", "pipx available"),
++-        ("docker --version", "Docker CLI"),
++-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
++-        ("forge --version", "Foundry"),
++-        ("slither --version", "Slither")
+++      ("pipx --version", "pipx available"),
+++      ("docker --version", "Docker CLI"),
+++      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
+++      ("forge --version", "Foundry"),
+++      ("slither --version", "Slither"),
+++      ("sweagent --version", "SWE-Agent"),
+++      ("swe-rex --version", "SWE-ReX"),
++     ]
++     for cmd, name in checks:
++-        _check(cmd, name)
++-
++-    # Docker image
++-    img = "foundry_sol"
++-    tag = "0.4.0"
++-    if not image_present(f"{img}:{tag}"):
++-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
++-        try:
++-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
++-        except subprocess.CalledProcessError as e:
++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++-            sys.exit(1)
+++        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+++        print(f"✓ {name}")
+++
+++    cfg = Path(".solai.yaml")
+++    if cfg.exists():
+++        digest = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+++        if not image_present(digest):
+++            print("✗ Image digest missing – run `solai image-rebuild`"); sys.exit(1)
++ 
++     print("🚀  doctor finished – environment ready")
++ 
++-# ------------ backlog runner (placeholder) -------------------
++-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
++-    if not config_path.exists():
++-        print("Config", config_path, "not found"); sys.exit(1)
++-    
++-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
++-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
+++# ── image rebuild helper ──────────────────────────────────
+++def rebuild_image():
+++    img_tag = "foundry_sol:0.4.1"
+++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
+++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
+++                   check=True)
+++    digest = subprocess.check_output(
+++        f"docker inspect --format '{{{{index .RepoDigests 0}}}}' {img_tag}",
+++        shell=True, text=True).strip()
+++    subprocess.run(["docker", "push", digest], check=True)
+++    print("✓ image pushed:", digest)
+++    print("→ Update .solai.yaml with the new digest")
+++
+++# ── backlog runner ───────────────────────────────────────
+++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
+++    cfg = yaml.safe_load(cfg_path.read_text())
+++    model = cfg["agent"]["model"]
+++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
+++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
+++
+++    def _worker():
+++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
+++             open(log_path, "a") as log:
+++            repo_dir = Path(tmp) / "repo"
+++            _run(["git", "clone", ".", repo_dir], Path("."), log)
+++            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
+++                 Path("."), log)
+++
+++            # Write SWE-Agent config
+++            (repo_dir / "swe.yaml").write_text(f"""
+++open_pr: false
+++apply_patch_locally: true
+++problem_statement:
+++  repo_path: .
+++  text: "{cfg['agent']['repo_prompt']}"
+++env:
+++  deployment:
+++    image: {cfg['env']['docker_image']}
+++""")
+++
+++            # Run SWE-Agent inside swe-rex
+++            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
+++                  "--", "sweagent", "run", "--config", "swe.yaml",
+++                  "--output-tar", "patch.tar"], repo_dir, log)
+++
+++            if not (repo_dir / "patch.tar").exists():
+++                print("No patch produced"); return
+++
+++            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
+++            diff = next(repo_dir.glob("*.diff"))
+++            stat = subprocess.check_output(f"git apply --stat {diff}", shell=True,
+++                                           cwd=repo_dir, text=True)
+++            loc = sum(map(int, re.findall(r'(\d+) insert', stat)))
+++            if loc == 0 or loc > 2000:
+++                print("Patch size invalid"); return
+++
+++            _run(["git", "apply", str(diff)], repo_dir, log)
+++            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
+++            if test_res.returncode:
+++                print("Tests still failing"); return
+++
+++            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
+++
+++    while True:
+++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
+++            pool.submit(_worker).result()
++         if once:
++-            print("Will exit after backlog drains") 
++\ No newline at end of file
+++            break
+++        time.sleep(30) 
++\ No newline at end of file
++diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
++index b247b3d..ad7eb9e 100644
++--- a/src/solai/templates/dot_solai.yaml
+++++ b/src/solai/templates/dot_solai.yaml
++@@ -1,9 +1,18 @@
++ agent:
++-  model: gpt4o
+++  model: gpt4o-2025-04-25      # pin to dated model
++   usd_cap: 5
+++  repo_prompt: "Fix failing tests"
+++
++ env:
++-  docker_image: foundry_sol:0.4.0
++-  post_startup_cmds: ["forge test -q"]
+++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
+++  post_startup_cmds:
+++    - ["forge", "test", "-q"]
+++
+++task:
+++  branch: fix-demo
+++  max_attempts: 1
+++
+++worktrees_dir: .solai/worktrees
+++
++ backlog:
++-  file: backlog.yaml
++-worktrees_dir: .solai/worktrees 
++\ No newline at end of file
+++  file: backlog.yaml 
++\ No newline at end of file
+diff --git a/temp_diff2 b/temp_diff2
+new file mode 100644
+index 0000000..f8e0692
+--- /dev/null
++++ b/temp_diff2
+@@ -0,0 +1,1555 @@
++diff --git a/.github/workflows/solai.yml b/.github/workflows/solai.yml
++new file mode 100644
++index 0000000..36230e6
++--- /dev/null
+++++ b/.github/workflows/solai.yml
++@@ -0,0 +1,26 @@
+++name: solai-phase2
+++on: push
+++jobs:
+++  smoke:
+++    runs-on: ubuntu-22.04
+++    steps:
+++      - uses: actions/checkout@v4
+++      - uses: docker/setup-qemu-action@v3
+++      - uses: docker/setup-buildx-action@v3
+++      - name: Build wheel
+++        run: python -m build
+++      - name: Install solai
+++        run: pipx install dist/*.whl
+++      - name: Smoke test
+++        run: |
+++          mkdir smoke && cd smoke
+++          git init .
+++          echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
+++          cat > Y.t.sol << 'EOF'
+++          pragma solidity ^0.8.26; import "forge-std/Test.sol"; contract T is Test {
+++            function testFail() public { assertTrue(false); }
+++          }
+++          EOF
+++          solai init
+++          make bootstrap-solai
+++          solai run --once --max-concurrency 1 
++\ No newline at end of file
++diff --git a/.solai.yaml b/.solai.yaml
++new file mode 100644
++index 0000000..8fe27e8
++--- /dev/null
+++++ b/.solai.yaml
++@@ -0,0 +1,18 @@
+++agent:
+++  model: gpt4o-2025-04-25      # pin to dated model
+++  usd_cap: 5
+++  repo_prompt: "Fix failing tests"
+++
+++env:
+++  docker_image: "foundry_sol:0.4.1"
+++  post_startup_cmds:
+++    - ["forge", "test", "-q"]
+++
+++task:
+++  branch: fix-demo
+++  max_attempts: 1
+++
+++worktrees_dir: .solai/worktrees
+++
+++backlog:
+++  file: backlog.yaml 
++\ No newline at end of file
++diff --git a/Makefile b/Makefile
++new file mode 100644
++index 0000000..bc932b2
++--- /dev/null
+++++ b/Makefile
++@@ -0,0 +1,2 @@
+++# Main Makefile for solai
+++include Makefile.inc 
++\ No newline at end of file
++diff --git a/Makefile.inc b/Makefile.inc
++new file mode 100644
++index 0000000..f64b912
++--- /dev/null
+++++ b/Makefile.inc
++@@ -0,0 +1,17 @@
+++# >>> solai autogenerated
+++bootstrap-solai:
+++	pipx ensurepath
+++	@if command -v solai >/dev/null; then \
+++	    pipx upgrade solai || true; \
+++	else \
+++	    pipx install solai[ai]; \
+++	fi
+++	# Ensure SWE-Agent & SWE-ReX are present in the same venv
+++	pipx inject --force solai \
+++	    git+https://github.com/princeton-nlp/SWE-agent.git@main \
+++	    git+https://github.com/SWE-agent/SWE-ReX.git@main
+++	solai doctor
+++
+++solai-run:
+++	solai run
+++# <<< solai autogenerated 
++\ No newline at end of file
++diff --git a/README.md b/README.md
++index 00217af..4ee4895 100644
++--- a/README.md
+++++ b/README.md
++@@ -5,13 +5,30 @@ Plug-and-play AI improvement pipeline for Solidity projects.
++ ## Installation
++ 
++ ```bash
++-pipx install solai
+++# 1) install core CLI
+++pipx install solai[ai] --include-deps
+++
+++# 2) inject the latest AI backends into that same solai venv
+++pipx inject solai \
+++  git+https://github.com/princeton-nlp/SWE-agent.git@main \
+++  git+https://github.com/SWE-agent/SWE-ReX.git@main
++ ```
++ 
+++## SWE-ReX Authentication
+++
+++The SWE-ReX service uses API key authentication. When making requests to the service:
+++
+++1. The executable is named `swerex-remote` (not `swe-rex`)
+++2. Authentication is done via the `X-API-Key` HTTP header
+++3. The API key must be provided in the following ways:
+++   - For HTTP requests: Include header `X-API-Key: your_api_key`
+++   - For CLI usage: Use `swerex-remote --api-key your_api_key`
+++   - For Python: Use headers dictionary `{"X-API-Key": "your_api_key"}`
+++
++ ## Quick Start
++ 
++ ```bash
++-# In your Solidity project directory:
+++# In your Solidity project directory (after installing solai & AI deps):
++ solai init
++ make bootstrap-solai
++ make solai-run
++@@ -23,7 +40,13 @@ make solai-run
++ - Docker
++ - Foundry
++ - Slither
++-- SWE-Agent and SWE-ReX
+++- SWE-ReX (automatically installed with solai)
+++- SWE-Agent (requires manual installation from source, see above)
+++
+++## Docker RAM Requirements
+++
+++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
+++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
++ 
++ ## Implementation Details
++ 
++diff --git a/bootstrap/install_python_env.sh b/bootstrap/install_python_env.sh
++new file mode 100755
++index 0000000..a927afa
++--- /dev/null
+++++ b/bootstrap/install_python_env.sh
++@@ -0,0 +1,12 @@
+++#!/usr/bin/env bash
+++set -euo pipefail
+++echo "▶ Creating Python 3.12 virtualenv (.venv)"
+++python3.12 -m venv .venv
+++source .venv/bin/activate
+++pip install -U pip
+++# install core CLI deps
+++pip install typer rich pyyaml
+++# install solai itself with the [ai] extra (this pulls SWE-Agent & SWE-ReX from GitHub)
+++pip install -e ".[ai]"
+++
+++deactivate 
++\ No newline at end of file
++diff --git a/dist/solai-0.4.0-py3-none-any.whl b/dist/solai-0.4.0-py3-none-any.whl
++new file mode 100644
++index 0000000..82581c6
++Binary files /dev/null and b/dist/solai-0.4.0-py3-none-any.whl differ
++diff --git a/dist/solai-0.4.0.tar.gz b/dist/solai-0.4.0.tar.gz
++new file mode 100644
++index 0000000..493b3eb
++Binary files /dev/null and b/dist/solai-0.4.0.tar.gz differ
++diff --git a/dist/solai-0.4.1-py3-none-any.whl b/dist/solai-0.4.1-py3-none-any.whl
++new file mode 100644
++index 0000000..656a751
++Binary files /dev/null and b/dist/solai-0.4.1-py3-none-any.whl differ
++diff --git a/dist/solai-0.4.1.tar.gz b/dist/solai-0.4.1.tar.gz
++new file mode 100644
++index 0000000..bb6ef0c
++Binary files /dev/null and b/dist/solai-0.4.1.tar.gz differ
++diff --git a/dist/solai-0.4.2-py3-none-any.whl b/dist/solai-0.4.2-py3-none-any.whl
++new file mode 100644
++index 0000000..78f83c7
++Binary files /dev/null and b/dist/solai-0.4.2-py3-none-any.whl differ
++diff --git a/dist/solai-0.4.2.tar.gz b/dist/solai-0.4.2.tar.gz
++new file mode 100644
++index 0000000..475f5ed
++Binary files /dev/null and b/dist/solai-0.4.2.tar.gz differ
++diff --git a/gitignore_snip.txt b/gitignore_snip.txt
++new file mode 100644
++index 0000000..78dd5c0
++--- /dev/null
+++++ b/gitignore_snip.txt
++@@ -0,0 +1,4 @@
+++# >>> solai
+++.solai/worktrees/
+++.solai/logs/
+++# <<< solai 
++\ No newline at end of file
++diff --git a/pyproject.toml b/pyproject.toml
++index 6bfb613..90365e8 100644
++--- a/pyproject.toml
+++++ b/pyproject.toml
++@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
++ 
++ [project]
++ name            = "solai"
++-version         = "0.4.0"
+++version         = "0.4.2"
++ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
++ readme          = "README.md"
++ requires-python = ">=3.12"
++@@ -13,11 +13,23 @@ authors         = [{name = "SoloLabs"}]
++ dependencies    = [
++   "typer>=0.12",
++   "rich>=13",
++-  "pyyaml>=6"
+++  "pyyaml>=6",
+++  # AI dependencies are now provided via the [ai] extra below
++ ]
++ 
++ [project.scripts]
++ solai = "solai.cli:app"
++ 
+++[project.optional-dependencies]
+++ai = [
+++  # install latest SWE-Agent from GitHub
+++  "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent",
+++  # install latest SWE-ReX from GitHub
+++  "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
+++]
+++
++ [tool.hatch.build]
++-packages = ["src/solai"] 
++\ No newline at end of file
+++packages = ["src/solai"]
+++
+++[tool.hatch.metadata]
+++allow-direct-references = true 
++\ No newline at end of file
++diff --git a/src/solai/__pycache__/__init__.cpython-313.pyc b/src/solai/__pycache__/__init__.cpython-313.pyc
++new file mode 100644
++index 0000000..1cc17ce
++Binary files /dev/null and b/src/solai/__pycache__/__init__.cpython-313.pyc differ
++diff --git a/src/solai/__pycache__/cli.cpython-313.pyc b/src/solai/__pycache__/cli.cpython-313.pyc
++new file mode 100644
++index 0000000..5254418
++Binary files /dev/null and b/src/solai/__pycache__/cli.cpython-313.pyc differ
++diff --git a/src/solai/__pycache__/runner.cpython-313.pyc b/src/solai/__pycache__/runner.cpython-313.pyc
++new file mode 100644
++index 0000000..d8da820
++Binary files /dev/null and b/src/solai/__pycache__/runner.cpython-313.pyc differ
++diff --git a/src/solai/cli.py b/src/solai/cli.py
++index cb02a10..cca6f8a 100644
++--- a/src/solai/cli.py
+++++ b/src/solai/cli.py
++@@ -1,5 +1,5 @@
++ from pathlib import Path
++-import shutil, subprocess, platform, importlib.resources as pkg
+++import shutil, subprocess, platform, importlib.resources as pkg, yaml
++ import typer
++ from solai.runner import run_backlog, doctor as run_doctor
++ 
++@@ -31,13 +31,25 @@ def init(update: bool = typer.Option(False, "-u", "--update",
++     
++     typer.echo("✅  Run `make bootstrap-solai`")
++ 
+++    # ---- placeholder digest warning ------------------------------------
+++    cfg = Path(".solai.yaml")
+++    if cfg.exists():
+++        docker_image = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+++        if "placeholder_digest" in docker_image:
+++            typer.secho(
+++                "⚠  .solai.yaml still has placeholder_digest — "
+++                "run `solai image-rebuild` and update the file.",
+++                fg="yellow")
+++
++ # ----- run ---------------------------------------------------
++ @app.command()
++ def run(config: Path = Path(".solai.yaml"),
++-        once: bool = typer.Option(True, help="Exit after backlog drains"),
++-        max_concurrency: int = typer.Option(4)):
+++        once: bool = typer.Option(False, "--once/--watch",
+++                                  help="Exit after one backlog pass"),
+++        max_concurrency: int = typer.Option(4),
+++        log_file: Path = typer.Option(".solai/logs/run.log")):
++     """Run backlog tasks."""
++-    run_backlog(config, once, max_concurrency)
+++    run_backlog(config, once, max_concurrency, log_file)
++ 
++ # ----- doctor -----------------------------------------------
++ @app.command()
++@@ -45,5 +57,11 @@ def doctor():
++     """Environment self-test."""
++     run_doctor()
++ 
+++@app.command("image-rebuild")
+++def image_rebuild():
+++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
+++    from solai.runner import rebuild_image
+++    rebuild_image()
+++
++ if __name__ == "__main__":
++     app() 
++\ No newline at end of file
++diff --git a/src/solai/runner.py b/src/solai/runner.py
++index ee69e89..34160da 100644
++--- a/src/solai/runner.py
+++++ b/src/solai/runner.py
++@@ -1,67 +1,134 @@
++-import subprocess, sys, json, os, importlib
+++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
++ from pathlib import Path
++ from concurrent.futures import ThreadPoolExecutor
++ 
++-# ------------ doctor ----------------------------------------
++-def _check(cmd: str, name: str):
++-    try:
++-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++-        print(f"✓ {name}")
++-    except subprocess.CalledProcessError as e:
++-        print(f"✗ {name} not found")
++-        if "docker build" in cmd:
++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++-        sys.exit(1)
++-
++-def _check_python_package(package: str):
++-    try:
++-        importlib.import_module(package)
++-        print(f"✓ {package} importable")
++-    except ImportError:
++-        print(f"✗ {package} not installed")
++-        sys.exit(1)
+++# ── helpers ────────────────────────────────────────────────
+++def _run(cmd, cwd, log):
+++    """Run cmd streaming to console & optional log."""
+++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
+++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+++    for line in p.stdout:
+++        print(line, end="")
+++        if log: log.write(line)
+++    p.wait()
+++    if p.returncode:
+++        raise subprocess.CalledProcessError(p.returncode, cmd)
++ 
++ def image_present(tag: str) -> bool:
++-    import json, subprocess
++-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
++-                                  shell=True).decode().strip()
+++    out = subprocess.check_output(
+++        f"docker images --format '{{{{.Repository}}}}:{{{{.Tag}}}}' {tag}",
+++        shell=True, text=True).strip()
++     return bool(out)
++ 
+++# ── doctor ────────────────────────────────────────────────
++ def doctor():
++     if sys.version_info < (3, 12):
++-        print("✗ Python 3.12+ required")
++-        sys.exit(1)
++-
++-    # Basic CLI tools
++-    checks = [
++-        ("pipx --version", "pipx available"),
++-        ("docker --version", "Docker CLI"),
++-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
++-        ("forge --version", "Foundry"),
++-        ("slither --version", "Slither")
+++        print("✗ Python 3.12+ required"); sys.exit(1)
+++    if platform.system() == "Windows":
+++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
+++
+++    # Core checks (swe-rex is core, sweagent is not)
+++    core_checks = [
+++      ("pipx --version", "pipx available"),
+++      ("docker --version", "Docker CLI"),
+++      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
+++      ("forge --version", "Foundry"),
+++      ("slither --version", "Slither"),
+++      ("swerex-remote --version", "SWE-ReX")
++     ]
++-    for cmd, name in checks:
++-        _check(cmd, name)
++-
++-    # Docker image
++-    img = "foundry_sol"
++-    tag = "0.4.0"
++-    if not image_present(f"{img}:{tag}"):
++-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
+++    for cmd, name in core_checks:
++         try:
++-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
++-        except subprocess.CalledProcessError as e:
++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++-            sys.exit(1)
+++            subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+++            print(f"✓ {name}")
+++        except (subprocess.CalledProcessError, FileNotFoundError):
+++            print(f"✗ {name} check failed. Please ensure it's installed and in PATH."); sys.exit(1)
+++
+++    # Optional check for sweagent (needs manual source install)
+++    try:
+++        subprocess.check_output("sweagent --version", shell=True, stderr=subprocess.STDOUT)
+++        print(f"✓ SWE-Agent")
+++    except (subprocess.CalledProcessError, FileNotFoundError):
+++        print(f"⚠ SWE-Agent missing. Install from source: git clone https://github.com/princeton-nlp/SWE-agent.git && cd SWE-agent && pip install -e .")
+++
+++    cfg = Path(".solai.yaml")
+++    if cfg.exists():
+++        tag = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+++        if not image_present(tag):
+++            print("✗ Image tag missing – run `solai image-rebuild`"); sys.exit(1)
++ 
+++    print("ℹ  Ensure Docker Desktop memory ≥ 6 GB")
++     print("🚀  doctor finished – environment ready")
++ 
++-# ------------ backlog runner (placeholder) -------------------
++-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
++-    if not config_path.exists():
++-        print("Config", config_path, "not found"); sys.exit(1)
++-    
++-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
++-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
+++# ── image rebuild helper ──────────────────────────────────
+++def rebuild_image():
+++    img_tag = "foundry_sol:0.4.1"
+++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
+++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
+++                   check=True)
+++    print("✓ image built:", img_tag)
+++    print("→ Update .solai.yaml with the new tag")
+++
+++# ── backlog runner ───────────────────────────────────────
+++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
+++    cfg = yaml.safe_load(cfg_path.read_text())
+++    model = cfg["agent"]["model"]
+++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
+++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
+++
+++    def _worker():
+++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
+++             open(log_path, "a") as log:
+++            repo_dir = Path(tmp) / "repo"
+++            log_path.parent.mkdir(parents=True, exist_ok=True)
+++            _run(["git", "clone", ".", repo_dir], Path("."), log)
+++            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
+++                 Path("."), log)
+++
+++            # Write SWE-Agent config
+++            (repo_dir / "swe.yaml").write_text(f"""
+++open_pr: false
+++apply_patch_locally: true
+++problem_statement:
+++  repo_path: .
+++  text: "{cfg['agent']['repo_prompt']}"
+++env:
+++  deployment:
+++    image: {cfg['env']['docker_image']}
+++""")
+++
+++            # Run SWE-Agent inside swe-rex
+++            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
+++                  "--", "sweagent", "run", "--config", "swe.yaml",
+++                  "--output-tar", "patch.tar"], repo_dir, log)
+++
+++            if not (repo_dir / "patch.tar").exists():
+++                print("No patch produced"); return
+++
+++            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
+++            diff_files = list(repo_dir.glob("*.diff")) + list(repo_dir.glob("*.patch"))
+++            if not diff_files:
+++                print("No diff inside patch tar"); return
+++            diff = diff_files[0]
+++
+++            stat = subprocess.check_output(
+++                f"git apply --stat {diff}", shell=True, cwd=repo_dir, text=True)
+++            m = re.search(r'(\d+) insertions?\(\+\), (\d+) deletions?\(-\)', stat)
+++            ins = int(m.group(1)) if m else 0
+++            dels = int(m.group(2)) if m else 0
+++            loc = ins + dels
+++            if loc == 0 or loc > 2000 or diff.stat().st_size > 100_000:
+++                print("Patch size invalid"); return
+++
+++            _run(["git", "apply", str(diff)], repo_dir, log)
+++            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
+++            if test_res.returncode:
+++                print("Tests still failing"); return
+++
+++            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
+++
+++    while True:
+++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
+++            pool.submit(_worker).result()
++         if once:
++-            print("Will exit after backlog drains") 
++\ No newline at end of file
+++            break
+++        time.sleep(30) 
++\ No newline at end of file
++diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
++index b247b3d..ad7eb9e 100644
++--- a/src/solai/templates/dot_solai.yaml
+++++ b/src/solai/templates/dot_solai.yaml
++@@ -1,9 +1,18 @@
++ agent:
++-  model: gpt4o
+++  model: gpt4o-2025-04-25      # pin to dated model
++   usd_cap: 5
+++  repo_prompt: "Fix failing tests"
+++
++ env:
++-  docker_image: foundry_sol:0.4.0
++-  post_startup_cmds: ["forge test -q"]
+++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
+++  post_startup_cmds:
+++    - ["forge", "test", "-q"]
+++
+++task:
+++  branch: fix-demo
+++  max_attempts: 1
+++
+++worktrees_dir: .solai/worktrees
+++
++ backlog:
++-  file: backlog.yaml
++-worktrees_dir: .solai/worktrees 
++\ No newline at end of file
+++  file: backlog.yaml 
++\ No newline at end of file
++diff --git a/temp_diff b/temp_diff
++new file mode 100644
++index 0000000..725e7e5
++--- /dev/null
+++++ b/temp_diff
++@@ -0,0 +1,281 @@
+++diff --git a/README.md b/README.md
+++index 00217af..a38f710 100644
+++--- a/README.md
++++++ b/README.md
+++@@ -25,6 +25,11 @@ make solai-run
+++ - Slither
+++ - SWE-Agent and SWE-ReX
+++ 
++++## Docker RAM Requirements
++++
++++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
++++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
++++
+++ ## Implementation Details
+++ 
+++ For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
+++diff --git a/pyproject.toml b/pyproject.toml
+++index 6bfb613..276f07a 100644
+++--- a/pyproject.toml
++++++ b/pyproject.toml
+++@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
+++ 
+++ [project]
+++ name            = "solai"
+++-version         = "0.4.0"
++++version         = "0.4.1"
+++ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
+++ readme          = "README.md"
+++ requires-python = ">=3.12"
+++@@ -13,7 +13,9 @@ authors         = [{name = "SoloLabs"}]
+++ dependencies    = [
+++   "typer>=0.12",
+++   "rich>=13",
+++-  "pyyaml>=6"
++++  "pyyaml>=6",
++++  "sweagent>=1.0.0",
++++  "swe-rex>=1.0.0"
+++ ]
+++ 
+++ [project.scripts]
+++diff --git a/src/solai/cli.py b/src/solai/cli.py
+++index cb02a10..b20805e 100644
+++--- a/src/solai/cli.py
++++++ b/src/solai/cli.py
+++@@ -34,10 +34,12 @@ def init(update: bool = typer.Option(False, "-u", "--update",
+++ # ----- run ---------------------------------------------------
+++ @app.command()
+++ def run(config: Path = Path(".solai.yaml"),
+++-        once: bool = typer.Option(True, help="Exit after backlog drains"),
+++-        max_concurrency: int = typer.Option(4)):
++++        once: bool = typer.Option(False, "--once/--watch",
++++                                  help="Exit after one backlog pass"),
++++        max_concurrency: int = typer.Option(4),
++++        log_file: Path = typer.Option(".solai/logs/run.log")):
+++     """Run backlog tasks."""
+++-    run_backlog(config, once, max_concurrency)
++++    run_backlog(config, once, max_concurrency, log_file)
+++ 
+++ # ----- doctor -----------------------------------------------
+++ @app.command()
+++@@ -45,5 +47,11 @@ def doctor():
+++     """Environment self-test."""
+++     run_doctor()
+++ 
++++@app.command("image-rebuild")
++++def image_rebuild():
++++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
++++    from solai.runner import rebuild_image
++++    rebuild_image()
++++
+++ if __name__ == "__main__":
+++     app() 
+++\ No newline at end of file
+++diff --git a/src/solai/runner.py b/src/solai/runner.py
+++index ee69e89..0c32ab3 100644
+++--- a/src/solai/runner.py
++++++ b/src/solai/runner.py
+++@@ -1,67 +1,119 @@
+++-import subprocess, sys, json, os, importlib
++++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
+++ from pathlib import Path
+++ from concurrent.futures import ThreadPoolExecutor
+++ 
+++-# ------------ doctor ----------------------------------------
+++-def _check(cmd: str, name: str):
+++-    try:
+++-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+++-        print(f"✓ {name}")
+++-    except subprocess.CalledProcessError as e:
+++-        print(f"✗ {name} not found")
+++-        if "docker build" in cmd:
+++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+++-        sys.exit(1)
+++-
+++-def _check_python_package(package: str):
+++-    try:
+++-        importlib.import_module(package)
+++-        print(f"✓ {package} importable")
+++-    except ImportError:
+++-        print(f"✗ {package} not installed")
+++-        sys.exit(1)
+++-
+++-def image_present(tag: str) -> bool:
+++-    import json, subprocess
+++-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
+++-                                  shell=True).decode().strip()
++++# ── helpers ────────────────────────────────────────────────
++++def _run(cmd, cwd, log):
++++    """Run cmd streaming to console & optional log."""
++++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
++++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
++++    for line in p.stdout:
++++        print(line, end="")
++++        if log: log.write(line)
++++    p.wait()
++++    if p.returncode:
++++        raise subprocess.CalledProcessError(p.returncode, cmd)
++++
++++def image_present(digest: str) -> bool:
++++    out = subprocess.check_output(
++++        f"docker images --no-trunc --format '{{{{.Digest}}}}' {digest}",
++++        shell=True, text=True).strip()
+++     return bool(out)
+++ 
++++# ── doctor ────────────────────────────────────────────────
+++ def doctor():
+++     if sys.version_info < (3, 12):
+++-        print("✗ Python 3.12+ required")
+++-        sys.exit(1)
++++        print("✗ Python 3.12+ required"); sys.exit(1)
++++    if platform.system() == "Windows":
++++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
+++ 
+++-    # Basic CLI tools
+++     checks = [
+++-        ("pipx --version", "pipx available"),
+++-        ("docker --version", "Docker CLI"),
+++-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
+++-        ("forge --version", "Foundry"),
+++-        ("slither --version", "Slither")
++++      ("pipx --version", "pipx available"),
++++      ("docker --version", "Docker CLI"),
++++      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
++++      ("forge --version", "Foundry"),
++++      ("slither --version", "Slither"),
++++      ("sweagent --version", "SWE-Agent"),
++++      ("swe-rex --version", "SWE-ReX"),
+++     ]
+++     for cmd, name in checks:
+++-        _check(cmd, name)
+++-
+++-    # Docker image
+++-    img = "foundry_sol"
+++-    tag = "0.4.0"
+++-    if not image_present(f"{img}:{tag}"):
+++-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
+++-        try:
+++-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
+++-        except subprocess.CalledProcessError as e:
+++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+++-            sys.exit(1)
++++        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++++        print(f"✓ {name}")
++++
++++    cfg = Path(".solai.yaml")
++++    if cfg.exists():
++++        digest = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
++++        if not image_present(digest):
++++            print("✗ Image digest missing – run `solai image-rebuild`"); sys.exit(1)
+++ 
+++     print("🚀  doctor finished – environment ready")
+++ 
+++-# ------------ backlog runner (placeholder) -------------------
+++-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
+++-    if not config_path.exists():
+++-        print("Config", config_path, "not found"); sys.exit(1)
+++-    
+++-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+++-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
++++# ── image rebuild helper ──────────────────────────────────
++++def rebuild_image():
++++    img_tag = "foundry_sol:0.4.1"
++++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
++++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
++++                   check=True)
++++    digest = subprocess.check_output(
++++        f"docker inspect --format '{{{{index .RepoDigests 0}}}}' {img_tag}",
++++        shell=True, text=True).strip()
++++    subprocess.run(["docker", "push", digest], check=True)
++++    print("✓ image pushed:", digest)
++++    print("→ Update .solai.yaml with the new digest")
++++
++++# ── backlog runner ───────────────────────────────────────
++++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
++++    cfg = yaml.safe_load(cfg_path.read_text())
++++    model = cfg["agent"]["model"]
++++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
++++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
++++
++++    def _worker():
++++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
++++             open(log_path, "a") as log:
++++            repo_dir = Path(tmp) / "repo"
++++            _run(["git", "clone", ".", repo_dir], Path("."), log)
++++            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
++++                 Path("."), log)
++++
++++            # Write SWE-Agent config
++++            (repo_dir / "swe.yaml").write_text(f"""
++++open_pr: false
++++apply_patch_locally: true
++++problem_statement:
++++  repo_path: .
++++  text: "{cfg['agent']['repo_prompt']}"
++++env:
++++  deployment:
++++    image: {cfg['env']['docker_image']}
++++""")
++++
++++            # Run SWE-Agent inside swe-rex
++++            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
++++                  "--", "sweagent", "run", "--config", "swe.yaml",
++++                  "--output-tar", "patch.tar"], repo_dir, log)
++++
++++            if not (repo_dir / "patch.tar").exists():
++++                print("No patch produced"); return
++++
++++            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
++++            diff = next(repo_dir.glob("*.diff"))
++++            stat = subprocess.check_output(f"git apply --stat {diff}", shell=True,
++++                                           cwd=repo_dir, text=True)
++++            loc = sum(map(int, re.findall(r'(\d+) insert', stat)))
++++            if loc == 0 or loc > 2000:
++++                print("Patch size invalid"); return
++++
++++            _run(["git", "apply", str(diff)], repo_dir, log)
++++            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
++++            if test_res.returncode:
++++                print("Tests still failing"); return
++++
++++            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
++++
++++    while True:
++++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
++++            pool.submit(_worker).result()
+++         if once:
+++-            print("Will exit after backlog drains") 
+++\ No newline at end of file
++++            break
++++        time.sleep(30) 
+++\ No newline at end of file
+++diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
+++index b247b3d..ad7eb9e 100644
+++--- a/src/solai/templates/dot_solai.yaml
++++++ b/src/solai/templates/dot_solai.yaml
+++@@ -1,9 +1,18 @@
+++ agent:
+++-  model: gpt4o
++++  model: gpt4o-2025-04-25      # pin to dated model
+++   usd_cap: 5
++++  repo_prompt: "Fix failing tests"
++++
+++ env:
+++-  docker_image: foundry_sol:0.4.0
+++-  post_startup_cmds: ["forge test -q"]
++++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
++++  post_startup_cmds:
++++    - ["forge", "test", "-q"]
++++
++++task:
++++  branch: fix-demo
++++  max_attempts: 1
++++
++++worktrees_dir: .solai/worktrees
++++
+++ backlog:
+++-  file: backlog.yaml
+++-worktrees_dir: .solai/worktrees 
+++\ No newline at end of file
++++  file: backlog.yaml 
+++\ No newline at end of file
++diff --git a/temp_diff2 b/temp_diff2
++new file mode 100644
++index 0000000..b23515f
++--- /dev/null
+++++ b/temp_diff2
++@@ -0,0 +1,736 @@
+++diff --git a/.github/workflows/solai.yml b/.github/workflows/solai.yml
+++new file mode 100644
+++index 0000000..36230e6
+++--- /dev/null
++++++ b/.github/workflows/solai.yml
+++@@ -0,0 +1,26 @@
++++name: solai-phase2
++++on: push
++++jobs:
++++  smoke:
++++    runs-on: ubuntu-22.04
++++    steps:
++++      - uses: actions/checkout@v4
++++      - uses: docker/setup-qemu-action@v3
++++      - uses: docker/setup-buildx-action@v3
++++      - name: Build wheel
++++        run: python -m build
++++      - name: Install solai
++++        run: pipx install dist/*.whl
++++      - name: Smoke test
++++        run: |
++++          mkdir smoke && cd smoke
++++          git init .
++++          echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
++++          cat > Y.t.sol << 'EOF'
++++          pragma solidity ^0.8.26; import "forge-std/Test.sol"; contract T is Test {
++++            function testFail() public { assertTrue(false); }
++++          }
++++          EOF
++++          solai init
++++          make bootstrap-solai
++++          solai run --once --max-concurrency 1 
+++\ No newline at end of file
+++diff --git a/.solai.yaml b/.solai.yaml
+++new file mode 100644
+++index 0000000..ad7eb9e
+++--- /dev/null
++++++ b/.solai.yaml
+++@@ -0,0 +1,18 @@
++++agent:
++++  model: gpt4o-2025-04-25      # pin to dated model
++++  usd_cap: 5
++++  repo_prompt: "Fix failing tests"
++++
++++env:
++++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
++++  post_startup_cmds:
++++    - ["forge", "test", "-q"]
++++
++++task:
++++  branch: fix-demo
++++  max_attempts: 1
++++
++++worktrees_dir: .solai/worktrees
++++
++++backlog:
++++  file: backlog.yaml 
+++\ No newline at end of file
+++diff --git a/Makefile.inc b/Makefile.inc
+++new file mode 100644
+++index 0000000..2354ef5
+++--- /dev/null
++++++ b/Makefile.inc
+++@@ -0,0 +1,11 @@
++++# >>> solai autogenerated
++++bootstrap-solai:
++++	pipx ensurepath
++++	@if command -v solai >/dev/null; \
++++	    then pipx upgrade solai || true; \
++++	    else pipx install solai; fi
++++	solai doctor
++++
++++solai-run:
++++	solai run
++++# <<< solai 
+++\ No newline at end of file
+++diff --git a/README.md b/README.md
+++index 00217af..cfd6b18 100644
+++--- a/README.md
++++++ b/README.md
+++@@ -5,13 +5,31 @@ Plug-and-play AI improvement pipeline for Solidity projects.
+++ ## Installation
+++ 
+++ ```bash
++++# Installs solai and swe-rex
+++ pipx install solai
++++
++++# SWE-Agent requires manual installation from source:
++++git clone https://github.com/princeton-nlp/SWE-agent.git
++++cd SWE-agent
++++pip install -e .
++++# Ensure the sweagent command is now in your PATH
+++ ```
+++ 
++++## SWE-ReX Authentication
++++
++++The SWE-ReX service uses API key authentication. When making requests to the service:
++++
++++1. The executable is named `swerex-remote` (not `swe-rex`)
++++2. Authentication is done via the `X-API-Key` HTTP header
++++3. The API key must be provided in the following ways:
++++   - For HTTP requests: Include header `X-API-Key: your_api_key`
++++   - For CLI usage: Use `swerex-remote --api-key your_api_key`
++++   - For Python: Use headers dictionary `{"X-API-Key": "your_api_key"}`
++++
+++ ## Quick Start
+++ 
+++ ```bash
+++-# In your Solidity project directory:
++++# In your Solidity project directory (after installing solai and SWE-Agent):
+++ solai init
+++ make bootstrap-solai
+++ make solai-run
+++@@ -23,7 +41,13 @@ make solai-run
+++ - Docker
+++ - Foundry
+++ - Slither
+++-- SWE-Agent and SWE-ReX
++++- SWE-ReX (automatically installed with solai)
++++- SWE-Agent (requires manual installation from source, see above)
++++
++++## Docker RAM Requirements
++++
++++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
++++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
+++ 
+++ ## Implementation Details
+++ 
+++diff --git a/gitignore_snip.txt b/gitignore_snip.txt
+++new file mode 100644
+++index 0000000..78dd5c0
+++--- /dev/null
++++++ b/gitignore_snip.txt
+++@@ -0,0 +1,4 @@
++++# >>> solai
++++.solai/worktrees/
++++.solai/logs/
++++# <<< solai 
+++\ No newline at end of file
+++diff --git a/pyproject.toml b/pyproject.toml
+++index 6bfb613..49e2198 100644
+++--- a/pyproject.toml
++++++ b/pyproject.toml
+++@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
+++ 
+++ [project]
+++ name            = "solai"
+++-version         = "0.4.0"
++++version         = "0.4.1"
+++ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
+++ readme          = "README.md"
+++ requires-python = ">=3.12"
+++@@ -13,7 +13,8 @@ authors         = [{name = "SoloLabs"}]
+++ dependencies    = [
+++   "typer>=0.12",
+++   "rich>=13",
+++-  "pyyaml>=6"
++++  "pyyaml>=6",
++++  "swe-rex==1.2.1"
+++ ]
+++ 
+++ [project.scripts]
+++diff --git a/src/solai/cli.py b/src/solai/cli.py
+++index cb02a10..cca6f8a 100644
+++--- a/src/solai/cli.py
++++++ b/src/solai/cli.py
+++@@ -1,5 +1,5 @@
+++ from pathlib import Path
+++-import shutil, subprocess, platform, importlib.resources as pkg
++++import shutil, subprocess, platform, importlib.resources as pkg, yaml
+++ import typer
+++ from solai.runner import run_backlog, doctor as run_doctor
+++ 
+++@@ -31,13 +31,25 @@ def init(update: bool = typer.Option(False, "-u", "--update",
+++     
+++     typer.echo("✅  Run `make bootstrap-solai`")
+++ 
++++    # ---- placeholder digest warning ------------------------------------
++++    cfg = Path(".solai.yaml")
++++    if cfg.exists():
++++        docker_image = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
++++        if "placeholder_digest" in docker_image:
++++            typer.secho(
++++                "⚠  .solai.yaml still has placeholder_digest — "
++++                "run `solai image-rebuild` and update the file.",
++++                fg="yellow")
++++
+++ # ----- run ---------------------------------------------------
+++ @app.command()
+++ def run(config: Path = Path(".solai.yaml"),
+++-        once: bool = typer.Option(True, help="Exit after backlog drains"),
+++-        max_concurrency: int = typer.Option(4)):
++++        once: bool = typer.Option(False, "--once/--watch",
++++                                  help="Exit after one backlog pass"),
++++        max_concurrency: int = typer.Option(4),
++++        log_file: Path = typer.Option(".solai/logs/run.log")):
+++     """Run backlog tasks."""
+++-    run_backlog(config, once, max_concurrency)
++++    run_backlog(config, once, max_concurrency, log_file)
+++ 
+++ # ----- doctor -----------------------------------------------
+++ @app.command()
+++@@ -45,5 +57,11 @@ def doctor():
+++     """Environment self-test."""
+++     run_doctor()
+++ 
++++@app.command("image-rebuild")
++++def image_rebuild():
++++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
++++    from solai.runner import rebuild_image
++++    rebuild_image()
++++
+++ if __name__ == "__main__":
+++     app() 
+++\ No newline at end of file
+++diff --git a/src/solai/runner.py b/src/solai/runner.py
+++index ee69e89..ae4cdae 100644
+++--- a/src/solai/runner.py
++++++ b/src/solai/runner.py
+++@@ -1,67 +1,140 @@
+++-import subprocess, sys, json, os, importlib
++++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
+++ from pathlib import Path
+++ from concurrent.futures import ThreadPoolExecutor
+++ 
+++-# ------------ doctor ----------------------------------------
+++-def _check(cmd: str, name: str):
+++-    try:
+++-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+++-        print(f"✓ {name}")
+++-    except subprocess.CalledProcessError as e:
+++-        print(f"✗ {name} not found")
+++-        if "docker build" in cmd:
+++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+++-        sys.exit(1)
+++-
+++-def _check_python_package(package: str):
+++-    try:
+++-        importlib.import_module(package)
+++-        print(f"✓ {package} importable")
+++-    except ImportError:
+++-        print(f"✗ {package} not installed")
+++-        sys.exit(1)
+++-
+++-def image_present(tag: str) -> bool:
+++-    import json, subprocess
+++-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
+++-                                  shell=True).decode().strip()
++++# ── helpers ────────────────────────────────────────────────
++++def _run(cmd, cwd, log):
++++    """Run cmd streaming to console & optional log."""
++++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
++++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
++++    for line in p.stdout:
++++        print(line, end="")
++++        if log: log.write(line)
++++    p.wait()
++++    if p.returncode:
++++        raise subprocess.CalledProcessError(p.returncode, cmd)
++++
++++def image_present(digest: str) -> bool:
++++    out = subprocess.check_output(
++++        f"docker images --no-trunc --format '{{{{.Digest}}}}' {digest}",
++++        shell=True, text=True).strip()
+++     return bool(out)
+++ 
++++# ── doctor ────────────────────────────────────────────────
+++ def doctor():
+++     if sys.version_info < (3, 12):
+++-        print("✗ Python 3.12+ required")
+++-        sys.exit(1)
+++-
+++-    # Basic CLI tools
+++-    checks = [
+++-        ("pipx --version", "pipx available"),
+++-        ("docker --version", "Docker CLI"),
+++-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
+++-        ("forge --version", "Foundry"),
+++-        ("slither --version", "Slither")
++++        print("✗ Python 3.12+ required"); sys.exit(1)
++++    if platform.system() == "Windows":
++++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
++++
++++    # Core checks (swe-rex is core, sweagent is not)
++++    core_checks = [
++++      ("pipx --version", "pipx available"),
++++      ("docker --version", "Docker CLI"),
++++      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
++++      ("forge --version", "Foundry"),
++++      ("slither --version", "Slither"),
++++      ("swe-rex --version", "SWE-ReX")
+++     ]
+++-    for cmd, name in checks:
+++-        _check(cmd, name)
+++-
+++-    # Docker image
+++-    img = "foundry_sol"
+++-    tag = "0.4.0"
+++-    if not image_present(f"{img}:{tag}"):
+++-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
++++    for cmd, name in core_checks:
+++         try:
+++-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
+++-        except subprocess.CalledProcessError as e:
+++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
+++-            sys.exit(1)
++++            subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++++            print(f"✓ {name}")
++++        except (subprocess.CalledProcessError, FileNotFoundError):
++++            print(f"✗ {name} check failed. Please ensure it's installed and in PATH."); sys.exit(1)
+++ 
++++    # Optional check for sweagent (needs manual source install)
++++    try:
++++        subprocess.check_output("sweagent --version", shell=True, stderr=subprocess.STDOUT)
++++        print(f"✓ SWE-Agent")
++++    except (subprocess.CalledProcessError, FileNotFoundError):
++++        print(f"⚠ SWE-Agent missing. Install from source: git clone https://github.com/princeton-nlp/SWE-agent.git && cd SWE-agent && pip install -e .")
++++
++++    cfg = Path(".solai.yaml")
++++    if cfg.exists():
++++        digest = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
++++        if "placeholder_digest" in digest:
++++            print("✗ .solai.yaml still contains placeholder_digest – run `solai image-rebuild`"); sys.exit(1)
++++        if not image_present(digest):
++++            print("✗ Image digest not present locally – pull or rebuild."); sys.exit(1)
++++
++++    print("ℹ  Ensure Docker Desktop memory ≥ 6 GB")
+++     print("🚀  doctor finished – environment ready")
+++ 
+++-# ------------ backlog runner (placeholder) -------------------
+++-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
+++-    if not config_path.exists():
+++-        print("Config", config_path, "not found"); sys.exit(1)
+++-    
+++-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+++-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
++++# ── image rebuild helper ──────────────────────────────────
++++def rebuild_image():
++++    img_tag = "foundry_sol:0.4.1"
++++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
++++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
++++                   check=True)
++++    digest = subprocess.check_output(
++++        f"docker inspect --format '{{{{index .RepoDigests 0}}}}' {img_tag}",
++++        shell=True, text=True).strip()
++++    subprocess.run(["docker", "push", digest], check=True)
++++    print("✓ image pushed:", digest)
++++    print("→ Update .solai.yaml with the new digest")
++++
++++# ── backlog runner ───────────────────────────────────────
++++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
++++    cfg = yaml.safe_load(cfg_path.read_text())
++++    model = cfg["agent"]["model"]
++++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
++++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
++++
++++    def _worker():
++++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
++++             open(log_path, "a") as log:
++++            repo_dir = Path(tmp) / "repo"
++++            log_path.parent.mkdir(parents=True, exist_ok=True)
++++            _run(["git", "clone", ".", repo_dir], Path("."), log)
++++            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
++++                 Path("."), log)
++++
++++            # Write SWE-Agent config
++++            (repo_dir / "swe.yaml").write_text(f"""
++++open_pr: false
++++apply_patch_locally: true
++++problem_statement:
++++  repo_path: .
++++  text: "{cfg['agent']['repo_prompt']}"
++++env:
++++  deployment:
++++    image: {cfg['env']['docker_image']}
++++""")
++++
++++            # Run SWE-Agent inside swe-rex
++++            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
++++                  "--", "sweagent", "run", "--config", "swe.yaml",
++++                  "--output-tar", "patch.tar"], repo_dir, log)
++++
++++            if not (repo_dir / "patch.tar").exists():
++++                print("No patch produced"); return
++++
++++            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
++++            diff_files = list(repo_dir.glob("*.diff")) + list(repo_dir.glob("*.patch"))
++++            if not diff_files:
++++                print("No diff inside patch tar"); return
++++            diff = diff_files[0]
++++
++++            stat = subprocess.check_output(
++++                f"git apply --stat {diff}", shell=True, cwd=repo_dir, text=True)
++++            m = re.search(r'(\d+) insertions?\(\+\), (\d+) deletions?\(-\)', stat)
++++            ins = int(m.group(1)) if m else 0
++++            dels = int(m.group(2)) if m else 0
++++            loc = ins + dels
++++            if loc == 0 or loc > 2000 or diff.stat().st_size > 100_000:
++++                print("Patch size invalid"); return
++++
++++            _run(["git", "apply", str(diff)], repo_dir, log)
++++            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
++++            if test_res.returncode:
++++                print("Tests still failing"); return
++++
++++            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
++++
++++    while True:
++++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
++++            pool.submit(_worker).result()
+++         if once:
+++-            print("Will exit after backlog drains") 
+++\ No newline at end of file
++++            break
++++        time.sleep(30) 
+++\ No newline at end of file
+++diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
+++index b247b3d..ad7eb9e 100644
+++--- a/src/solai/templates/dot_solai.yaml
++++++ b/src/solai/templates/dot_solai.yaml
+++@@ -1,9 +1,18 @@
+++ agent:
+++-  model: gpt4o
++++  model: gpt4o-2025-04-25      # pin to dated model
+++   usd_cap: 5
++++  repo_prompt: "Fix failing tests"
++++
+++ env:
+++-  docker_image: foundry_sol:0.4.0
+++-  post_startup_cmds: ["forge test -q"]
++++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
++++  post_startup_cmds:
++++    - ["forge", "test", "-q"]
++++
++++task:
++++  branch: fix-demo
++++  max_attempts: 1
++++
++++worktrees_dir: .solai/worktrees
++++
+++ backlog:
+++-  file: backlog.yaml
+++-worktrees_dir: .solai/worktrees 
+++\ No newline at end of file
++++  file: backlog.yaml 
+++\ No newline at end of file
+++diff --git a/temp_diff b/temp_diff
+++new file mode 100644
+++index 0000000..725e7e5
+++--- /dev/null
++++++ b/temp_diff
+++@@ -0,0 +1,281 @@
++++diff --git a/README.md b/README.md
++++index 00217af..a38f710 100644
++++--- a/README.md
+++++++ b/README.md
++++@@ -25,6 +25,11 @@ make solai-run
++++ - Slither
++++ - SWE-Agent and SWE-ReX
++++ 
+++++## Docker RAM Requirements
+++++
+++++**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
+++++Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
+++++
++++ ## Implementation Details
++++ 
++++ For a detailed summary of the Phase 1 implementation (v0.4.0), please refer to the document in the specs directory:
++++diff --git a/pyproject.toml b/pyproject.toml
++++index 6bfb613..276f07a 100644
++++--- a/pyproject.toml
+++++++ b/pyproject.toml
++++@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
++++ 
++++ [project]
++++ name            = "solai"
++++-version         = "0.4.0"
+++++version         = "0.4.1"
++++ description     = "Plug-and-play AI improvement pipeline for Solidity projects"
++++ readme          = "README.md"
++++ requires-python = ">=3.12"
++++@@ -13,7 +13,9 @@ authors         = [{name = "SoloLabs"}]
++++ dependencies    = [
++++   "typer>=0.12",
++++   "rich>=13",
++++-  "pyyaml>=6"
+++++  "pyyaml>=6",
+++++  "sweagent>=1.0.0",
+++++  "swe-rex>=1.0.0"
++++ ]
++++ 
++++ [project.scripts]
++++diff --git a/src/solai/cli.py b/src/solai/cli.py
++++index cb02a10..b20805e 100644
++++--- a/src/solai/cli.py
+++++++ b/src/solai/cli.py
++++@@ -34,10 +34,12 @@ def init(update: bool = typer.Option(False, "-u", "--update",
++++ # ----- run ---------------------------------------------------
++++ @app.command()
++++ def run(config: Path = Path(".solai.yaml"),
++++-        once: bool = typer.Option(True, help="Exit after backlog drains"),
++++-        max_concurrency: int = typer.Option(4)):
+++++        once: bool = typer.Option(False, "--once/--watch",
+++++                                  help="Exit after one backlog pass"),
+++++        max_concurrency: int = typer.Option(4),
+++++        log_file: Path = typer.Option(".solai/logs/run.log")):
++++     """Run backlog tasks."""
++++-    run_backlog(config, once, max_concurrency)
+++++    run_backlog(config, once, max_concurrency, log_file)
++++ 
++++ # ----- doctor -----------------------------------------------
++++ @app.command()
++++@@ -45,5 +47,11 @@ def doctor():
++++     """Environment self-test."""
++++     run_doctor()
++++ 
+++++@app.command("image-rebuild")
+++++def image_rebuild():
+++++    """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
+++++    from solai.runner import rebuild_image
+++++    rebuild_image()
+++++
++++ if __name__ == "__main__":
++++     app() 
++++\ No newline at end of file
++++diff --git a/src/solai/runner.py b/src/solai/runner.py
++++index ee69e89..0c32ab3 100644
++++--- a/src/solai/runner.py
+++++++ b/src/solai/runner.py
++++@@ -1,67 +1,119 @@
++++-import subprocess, sys, json, os, importlib
+++++import subprocess, sys, yaml, shutil, tempfile, platform, re, time, os, contextlib
++++ from pathlib import Path
++++ from concurrent.futures import ThreadPoolExecutor
++++ 
++++-# ------------ doctor ----------------------------------------
++++-def _check(cmd: str, name: str):
++++-    try:
++++-        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
++++-        print(f"✓ {name}")
++++-    except subprocess.CalledProcessError as e:
++++-        print(f"✗ {name} not found")
++++-        if "docker build" in cmd:
++++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++++-        sys.exit(1)
++++-
++++-def _check_python_package(package: str):
++++-    try:
++++-        importlib.import_module(package)
++++-        print(f"✓ {package} importable")
++++-    except ImportError:
++++-        print(f"✗ {package} not installed")
++++-        sys.exit(1)
++++-
++++-def image_present(tag: str) -> bool:
++++-    import json, subprocess
++++-    out = subprocess.check_output(f"docker images --format '{{{{json .}}}}' {tag}",
++++-                                  shell=True).decode().strip()
+++++# ── helpers ────────────────────────────────────────────────
+++++def _run(cmd, cwd, log):
+++++    """Run cmd streaming to console & optional log."""
+++++    p = subprocess.Popen(cmd, cwd=cwd, text=True,
+++++                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+++++    for line in p.stdout:
+++++        print(line, end="")
+++++        if log: log.write(line)
+++++    p.wait()
+++++    if p.returncode:
+++++        raise subprocess.CalledProcessError(p.returncode, cmd)
+++++
+++++def image_present(digest: str) -> bool:
+++++    out = subprocess.check_output(
+++++        f"docker images --no-trunc --format '{{{{.Digest}}}}' {digest}",
+++++        shell=True, text=True).strip()
++++     return bool(out)
++++ 
+++++# ── doctor ────────────────────────────────────────────────
++++ def doctor():
++++     if sys.version_info < (3, 12):
++++-        print("✗ Python 3.12+ required")
++++-        sys.exit(1)
+++++        print("✗ Python 3.12+ required"); sys.exit(1)
+++++    if platform.system() == "Windows":
+++++        print("ℹ  Windows detected – run solai inside WSL2 for best results")
++++ 
++++-    # Basic CLI tools
++++     checks = [
++++-        ("pipx --version", "pipx available"),
++++-        ("docker --version", "Docker CLI"),
++++-        ("docker info --format '{{.ServerVersion}}'", "Docker engine running"),
++++-        ("forge --version", "Foundry"),
++++-        ("slither --version", "Slither")
+++++      ("pipx --version", "pipx available"),
+++++      ("docker --version", "Docker CLI"),
+++++      ("docker info --format '{{.ServerVersion}}'", "Docker engine"),
+++++      ("forge --version", "Foundry"),
+++++      ("slither --version", "Slither"),
+++++      ("sweagent --version", "SWE-Agent"),
+++++      ("swe-rex --version", "SWE-ReX"),
++++     ]
++++     for cmd, name in checks:
++++-        _check(cmd, name)
++++-
++++-    # Docker image
++++-    img = "foundry_sol"
++++-    tag = "0.4.0"
++++-    if not image_present(f"{img}:{tag}"):
++++-        dockerfile = str(Path(__file__).parent / "docker" / "foundry_sol.Dockerfile")
++++-        try:
++++-            subprocess.run(["docker", "build", "-t", f"{img}:{tag}", "-f", dockerfile, "."], check=True)
++++-        except subprocess.CalledProcessError as e:
++++-            print("\nDocker build failed. Check:\n- Network connectivity\n- Docker daemon running\n- Build logs above")
++++-            sys.exit(1)
+++++        subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+++++        print(f"✓ {name}")
+++++
+++++    cfg = Path(".solai.yaml")
+++++    if cfg.exists():
+++++        digest = yaml.safe_load(cfg.read_text())["env"]["docker_image"]
+++++        if not image_present(digest):
+++++            print("✗ Image digest missing – run `solai image-rebuild`"); sys.exit(1)
++++ 
++++     print("🚀  doctor finished – environment ready")
++++ 
++++-# ------------ backlog runner (placeholder) -------------------
++++-def run_backlog(config_path: Path, once: bool, max_concurrency: int):
++++-    if not config_path.exists():
++++-        print("Config", config_path, "not found"); sys.exit(1)
++++-    
++++-    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
++++-        print(f"⚙  Starting backlog runner with {max_concurrency} workers")
+++++# ── image rebuild helper ──────────────────────────────────
+++++def rebuild_image():
+++++    img_tag = "foundry_sol:0.4.1"
+++++    here = Path(__file__).parent / "docker" / "foundry_sol.Dockerfile"
+++++    subprocess.run(["docker", "build", "-t", img_tag, "-f", str(here), "."],
+++++                   check=True)
+++++    digest = subprocess.check_output(
+++++        f"docker inspect --format '{{{{index .RepoDigests 0}}}}' {img_tag}",
+++++        shell=True, text=True).strip()
+++++    subprocess.run(["docker", "push", digest], check=True)
+++++    print("✓ image pushed:", digest)
+++++    print("→ Update .solai.yaml with the new digest")
+++++
+++++# ── backlog runner ───────────────────────────────────────
+++++def run_backlog(cfg_path: Path, once: bool, max_conc: int, log_path: Path):
+++++    cfg = yaml.safe_load(cfg_path.read_text())
+++++    model = cfg["agent"]["model"]
+++++    if not re.match(r"[a-z0-9\-]+-\d{4}-\d{2}-\d{2}", model):
+++++        print("Model string must pin date (e.g., gpt4o-2025-04-25)"); return
+++++
+++++    def _worker():
+++++        with tempfile.TemporaryDirectory(prefix="solai-") as tmp, \
+++++             open(log_path, "a") as log:
+++++            repo_dir = Path(tmp) / "repo"
+++++            _run(["git", "clone", ".", repo_dir], Path("."), log)
+++++            _run(["git", "-C", repo_dir, "checkout", "-b", cfg["task"]["branch"]],
+++++                 Path("."), log)
+++++
+++++            # Write SWE-Agent config
+++++            (repo_dir / "swe.yaml").write_text(f"""
+++++open_pr: false
+++++apply_patch_locally: true
+++++problem_statement:
+++++  repo_path: .
+++++  text: "{cfg['agent']['repo_prompt']}"
+++++env:
+++++  deployment:
+++++    image: {cfg['env']['docker_image']}
+++++""")
+++++
+++++            # Run SWE-Agent inside swe-rex
+++++            _run(["swe-rex", "run", "--image", cfg["env"]["docker_image"],
+++++                  "--", "sweagent", "run", "--config", "swe.yaml",
+++++                  "--output-tar", "patch.tar"], repo_dir, log)
+++++
+++++            if not (repo_dir / "patch.tar").exists():
+++++                print("No patch produced"); return
+++++
+++++            _run(["tar", "-xf", "patch.tar", "-C", "."], repo_dir, log)
+++++            diff = next(repo_dir.glob("*.diff"))
+++++            stat = subprocess.check_output(f"git apply --stat {diff}", shell=True,
+++++                                           cwd=repo_dir, text=True)
+++++            loc = sum(map(int, re.findall(r'(\d+) insert', stat)))
+++++            if loc == 0 or loc > 2000:
+++++                print("Patch size invalid"); return
+++++
+++++            _run(["git", "apply", str(diff)], repo_dir, log)
+++++            test_res = subprocess.run(["forge", "test", "-q"], cwd=repo_dir)
+++++            if test_res.returncode:
+++++                print("Tests still failing"); return
+++++
+++++            print(f"🎉  SWE-Agent applied {loc} LOC; tests green")
+++++
+++++    while True:
+++++        with ThreadPoolExecutor(max_workers=max_conc) as pool:
+++++            pool.submit(_worker).result()
++++         if once:
++++-            print("Will exit after backlog drains") 
++++\ No newline at end of file
+++++            break
+++++        time.sleep(30) 
++++\ No newline at end of file
++++diff --git a/src/solai/templates/dot_solai.yaml b/src/solai/templates/dot_solai.yaml
++++index b247b3d..ad7eb9e 100644
++++--- a/src/solai/templates/dot_solai.yaml
+++++++ b/src/solai/templates/dot_solai.yaml
++++@@ -1,9 +1,18 @@
++++ agent:
++++-  model: gpt4o
+++++  model: gpt4o-2025-04-25      # pin to dated model
++++   usd_cap: 5
+++++  repo_prompt: "Fix failing tests"
+++++
++++ env:
++++-  docker_image: foundry_sol:0.4.0
++++-  post_startup_cmds: ["forge test -q"]
+++++  docker_image: "ghcr.io/yourorg/foundry_sol@sha256:placeholder_digest"
+++++  post_startup_cmds:
+++++    - ["forge", "test", "-q"]
+++++
+++++task:
+++++  branch: fix-demo
+++++  max_attempts: 1
+++++
+++++worktrees_dir: .solai/worktrees
+++++
++++ backlog:
++++-  file: backlog.yaml
++++-worktrees_dir: .solai/worktrees 
++++\ No newline at end of file
+++++  file: backlog.yaml 
++++\ No newline at end of file
+++diff --git a/temp_diff2 b/temp_diff2
+++new file mode 100644
+++index 0000000..e69de29

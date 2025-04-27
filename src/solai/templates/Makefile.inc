@@ -4,7 +4,7 @@ bootstrap-solai:
 	@if command -v solai >/dev/null; \
 	    then pipx upgrade solai || true; \
 	    else pipx install solai; fi
-	solai doctor
+	# solai doctor  # <<< Removed premature doctor check
 
 solai-run:
 	solai run

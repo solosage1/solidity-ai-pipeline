@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Solai working state
+.solai/worktrees/
+.solai/logs/
+
+# Logs
+*.log
+
+# IDE / OS cruft
+.DS_Store
+*.swp 
+
+# Temporary diff files
+temp_diff* 

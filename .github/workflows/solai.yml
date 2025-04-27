@@ -1,0 +1,146 @@
+name: solai-phase2
+on: [push]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Grab your code
+      - uses: actions/checkout@v4
+
+      # 2) Ensure Python 3.12
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # Debug: Initial PATH state
+      - name: Debug - Initial PATH
+        run: |
+          echo "Initial PATH: $PATH"
+          echo "GITHUB_PATH content:"
+          cat $GITHUB_PATH || echo "GITHUB_PATH not found"
+
+      # 3) Install build tool + build your wheel
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+      - name: Build wheel
+        run: python -m build
+
+      # 4) Install your wheel + AI backends via pip
+      - name: Install solai wheel (with AI extras)
+        run: |
+          wheel=$(ls dist/solai-*.whl)
+          echo "Installing wheel: $wheel"
+          python -m pip install --upgrade pip
+          python -m pip install "${wheel}[ai]"
+          python -m pip install pipx
+
+      # 4a) Install Slither
+      - name: Install Slither
+        run: python -m pip install slither-analyzer
+
+      # 4b) Install Foundry
+      - name: Install Foundry
+        run: |
+          # 1) Create Foundry directories
+          #    Note: Binaries actually land in $HOME/.config/.foundry/bin with this setup
+          mkdir -p "$HOME/.foundry/bin" 
+          mkdir -p "$HOME/.config/.foundry/bin"
+
+          # 2) Download foundryup installer directly to the (unused) bin directory
+          curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
+          
+          # 3) Make it executable
+          chmod +x "$HOME/.foundry/bin/foundryup"
+
+          # 4) Add the foundryup script's dir to PATH *for this step only* 
+          export PATH="$HOME/.foundry/bin:$PATH"
+
+          # 5) Run foundryup to install the full suite
+          foundryup || echo "foundryup command failed with exit code $?"
+
+          # 6) Verify binary exists in the expected location
+          echo "--- Verifying forge install location ---"
+          ls -la "$HOME/.config/.foundry/bin/forge"
+          echo "--- End verification ---"
+
+          # 7) Persist the *correct* binary path for future steps
+          echo "Adding $HOME/.config/.foundry/bin to GITHUB_PATH"
+          echo "$HOME/.config/.foundry/bin" >> $GITHUB_PATH
+
+          # 8) Verify the installation using the correct path for this step
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
+          echo "Current PATH (in step): $PATH"
+          which forge
+          forge --version
+
+      # 5) Set up Docker so `solai doctor` will see it
+      - name: Set up QEMU emulation
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx (brings in Docker CLI & daemon)
+        uses: docker/setup-buildx-action@v3
+
+      # Debug: PATH after Docker setup
+      - name: Debug - Post Docker PATH
+        run: |
+          echo "PATH after Docker setup: $PATH"
+          echo "GITHUB_PATH content:"
+          cat $GITHUB_PATH
+          echo "Trying to locate forge:"
+          which forge || echo "forge not found in PATH"
+          ls -l "${HOME}/.foundry/bin"
+
+      # 6) Verify environment (Remove this step, move doctor call into smoke test)
+      # - name: solai doctor
+      #  run: |
+      #    echo "--- PATH check inside solai doctor step ---"
+      #    echo "PATH=$PATH"
+      #    which forge || echo "forge still not found by which in solai doctor step"
+      #    echo "--- End PATH check ---"
+      #    solai doctor
+
+      # 7) Full end-to-end smoke test
+      - name: Smoke test
+        run: |
+          set -e
+          mkdir smoke && cd smoke
+          git init .
+          echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
+          cat > Y.t.sol << 'EOF'
+          pragma solidity ^0.8.26; import "forge-std/Test.sol";
+          contract T is Test {
+            function testFail() public { assertTrue(false); }
+          }
+          EOF
+
+          # init
+          solai init
+
+          # Create top-level Makefile to include the generated .inc
+          echo 'include Makefile.inc' > Makefile
+
+          # bootstrap
+          make bootstrap-solai
+
+          # Build the docker image required by solai
+          echo "--- Building solai Docker image ---"
+          docker build -t solai-smoke-test:latest -f ../src/solai/docker/foundry_sol.Dockerfile ..
+          echo "--- Docker image build finished ---"
+
+          # Update .solai.yaml with the actual image tag used
+          echo "--- Updating .solai.yaml with image tag ---"
+          python -c 'import yaml; from pathlib import Path; cfg_path = Path(".solai.yaml"); data = yaml.safe_load(cfg_path.read_text()); data["env"]["docker_image"] = "solai-smoke-test:latest"; cfg_path.write_text(yaml.safe_dump(data)); print(f"Updated {cfg_path} with image tag: solai-smoke-test:latest")'
+          echo "--- .solai.yaml update finished ---"
+
+          # Verify environment *after* init, bootstrap, build, and config update
+          echo "--- Running solai doctor after init/bootstrap/build/config-update ---"
+          solai doctor
+          echo "--- solai doctor finished ---"
+
+          # run once
+          solai run --once --max-concurrency 1 
