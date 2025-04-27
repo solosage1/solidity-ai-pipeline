@@ -314,7 +314,7 @@ jobs:
           printf '%s\n' '✓ Checkpoint 1 Passed'
 
           printf '%s\n' '--- 2️⃣ Creating minimal valid swe.yaml ---'
-          cat > swe.yaml << 'YAML'
+          cat > swe.yaml << YAML
           problem_statement:
             text: "Fix failing tests"
 
@@ -328,16 +328,14 @@ jobs:
             repo:
               path: .
             deployment:
-              type: local
-              local:
-                sandbox_dir: .    # write into workspace instead of "/demo"
+              image: ${TARGET_IMAGE_TAG}
 
           actions:
             open_pr: false
             apply_patch_locally: true
           YAML
 
-          printf '%s\n' "✓ Created swe.yaml for local deployment with sandbox_dir set to workspace"
+          printf '%s\n' "✓ Created swe.yaml with Docker deployment (image=${TARGET_IMAGE_TAG})"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
           # First check basic YAML syntax
