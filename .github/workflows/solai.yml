@@ -169,12 +169,12 @@ jobs:
               # Create 'session_handler' module with stub class
               sh = eh / 'session_handler.py'
               if not sh.exists():
-                  sh.write_text(textwrap.dedent("""\
-          class SessionHandler:
-              """Stub for enterprise.enterprise_hooks.session_handler"""
-              def __init__(self, *args, **kwargs):
-                  pass
-          """))
+                  sh.write_text(
+                      "class SessionHandler:\n"
+                      "    \"\"\"Stub for enterprise.enterprise_hooks.session_handler\"\"\"\n"
+                      "    def __init__(self, *args, **kwargs):\n"
+                      "        pass\n"
+                  )
 
           spec = importlib.util.find_spec("sweagent")
           if spec is None:
