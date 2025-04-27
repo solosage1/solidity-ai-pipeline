@@ -131,37 +131,37 @@ jobs:
           # ------------------------------------------------------------------
           # Work-around packaging bug: create the missing sweagent/config dir
           # ------------------------------------------------------------------
-          python - <<'PY'
-import importlib.util, pathlib, sys, textwrap
+          python - << 'PY'
+            import importlib.util, pathlib, sys, textwrap
 
-spec = importlib.util.find_spec("sweagent")
-if spec is None:
-    sys.exit("❌ sweagent not found after install")
+            spec = importlib.util.find_spec("sweagent")
+            if spec is None:
+                sys.exit("❌ sweagent not found after install")
 
-pkg_dir = pathlib.Path(spec.origin).parent
-cfg_dir = pkg_dir / "config"
-cfg_dir.mkdir(exist_ok=True)
+            pkg_dir = pathlib.Path(spec.origin).parent
+            cfg_dir = pkg_dir / "config"
+            cfg_dir.mkdir(exist_ok=True)
 
-# Minimal placeholder config (prevent runtime asserts)
-default_cfg = cfg_dir / "default.yaml"
-if not default_cfg.exists():
-    default_cfg.write_text(textwrap.dedent("""\
-        #############################
-        # Minimal placeholder config
-        #############################
-        agent:
-          name: placeholder
-    """))
+            # Minimal placeholder config (prevent runtime asserts)
+            default_cfg = cfg_dir / "default.yaml"
+            if not default_cfg.exists():
+                default_cfg.write_text(textwrap.dedent("""\
+                    #############################
+                    # Minimal placeholder config
+                    #############################
+                    agent:
+                      name: placeholder
+                """))
 
-print(f"✓ sweagent installed at {pkg_dir}")
-print(f"✓ ensured {cfg_dir} exists with a placeholder config")
-PY
+            print(f"✓ sweagent installed at {pkg_dir}")
+            print(f"✓ ensured {cfg_dir} exists with a placeholder config")
+          PY
 
           # Lightweight version check (avoids importing sweagent.run.run)
-          python - <<'PY'
-import importlib.metadata, sys
-print("sweagent version:", importlib.metadata.version("sweagent"))
-PY
+          python - << 'PY'
+            import importlib.metadata, sys
+            print("sweagent version:", importlib.metadata.version("sweagent"))
+          PY
 
           which sweagent || { echo "sweagent CLI not in PATH"; exit 1; }
 
