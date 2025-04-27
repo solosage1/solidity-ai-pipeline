@@ -329,14 +329,14 @@ jobs:
             repo:
               path: .
             deployment:
-              image: ${TARGET_IMAGE_TAG}
+              type: local  # Use local deployment instead of Docker
 
           actions:
             open_pr: false
             apply_patch_locally: true
           YAML
 
-          printf '%s\n' "✓ Created swe.yaml with image: $TARGET_IMAGE_TAG"
+          printf '%s\n' "✓ Created swe.yaml for local deployment"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
           # First check basic YAML syntax
@@ -388,21 +388,25 @@ jobs:
           printf '%s\n' "--- 🩺 Exit Code: $ret"
 
           printf '%s\n' '--- 🪵 Capturing container logs ---'
-          CID=$(grep -oP 'Starting container \K[^ ]+' "$LOGFILE" | head -n1)
+          # Try to find the container ID from the log
+          CID=$(grep -oP 'Starting container \\K[^ ]+' "$LOGFILE" | head -n1)
           if [ -n "$CID" ]; then
-            docker logs "$CID" || true
+            # Always capture logs, especially on failure
+            docker logs "$CID" > container.log 2>&1 || true
+            printf '%s\n' "--- 📝 Container log contents (container.log) ---"
+            cat container.log
+          else
+             printf '%s\n' "--- ⚠️ Could not determine container ID to capture logs ---"
           fi
 
           if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
-            # If debug mode, we'll print the entire log for diagnostic purposes
-            if [[ "$DEBUG" == "true" ]]; then
-              printf '%s\n' "--- 📝 Full log contents ---"
-              cat "$LOGFILE"
-            else
-              # Always print the key validation sections in case of error
-              printf '%s\n' "--- 📝 Log excerpt (validation sections) ---"
-              grep -A 20 "Configuration from config files" "$LOGFILE" || true
-              grep -A 20 "Validation error" "$LOGFILE" || true
+            # Always print the full sweagent log on failure
+            printf '%s\n' "--- 📝 Full sweagent log contents ($LOGFILE) ---"
+            cat "$LOGFILE"
+            # Also print container log again if captured
+            if [ -f container.log ]; then
+              printf '%s\n' "--- 📝 Container log contents (container.log) ---"
+              cat container.log
             fi
             printf '%s\n' '❌ SWE-Agent run failed or patch missing'
             exit 1
