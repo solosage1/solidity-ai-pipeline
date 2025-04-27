@@ -124,8 +124,6 @@ jobs:
 
       # 4e) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
       - name: Install SWE-Agent & SWE-ReX
-        env:
-          DEBUG: ${{ env.DEBUG }}    # set to "true" for debug dumps (prints paths)
         run: |
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
@@ -225,9 +223,14 @@ jobs:
         shell: sudo -E bash {0}
         run: |
           set -e
-          # Foundry  ▸ user-site scripts ▸ **interpreter bin** ▸ rest of PATH
-          PYBIN_DIR=$(python3 -c 'import sys,os; from pathlib import Path; print(Path(sys.executable).parent)')
-          export PATH="$FOUNDRY_DIR/bin:$(python3 -m site --user-base)/bin:$PYBIN_DIR:$PATH"
+          # ── locate the runner's python-script directory *inside root* ──
+          RUNNER_PYBIN_DIR=$(python3 -c \
+              'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')
+          # Foundry  ▸ runner python bin ▸ rest of PATH
+          export PATH="$FOUNDRY_DIR/bin:${RUNNER_PYBIN_DIR}:$PATH"
+
+          # Early check that sweagent is visible to root
+          which sweagent || { echo "❌ sweagent not found in root PATH"; exit 1; }
 
           printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
