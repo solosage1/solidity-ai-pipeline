@@ -136,7 +136,7 @@ jobs:
           # Work-around packaging bug: create the missing sweagent/config dir
           # ------------------------------------------------------------------
           python - <<'PY'
-          import importlib.util, pathlib, sys, textwrap
+          import importlib.util, pathlib, sys, textwrap, site
 
           spec = importlib.util.find_spec("sweagent")
           if spec is None:
@@ -145,6 +145,11 @@ jobs:
           pkg_dir = pathlib.Path(spec.origin).parent
           cfg_dir = pkg_dir / "config"
           cfg_dir.mkdir(exist_ok=True)
+
+          # Also create the config dir directly in site-packages as a fallback
+          site_pkg = pathlib.Path(site.getsitepackages()[0])
+          site_cfg_dir = site_pkg / "config"
+          site_cfg_dir.mkdir(exist_ok=True)
 
           # Minimal placeholder config (prevents runtime asserts)
           default_cfg = cfg_dir / "default.yaml"
@@ -156,15 +161,32 @@ jobs:
           agent:
             name: placeholder
           """))
+          
+          # Also write it to the site-packages config dir
+          site_default_cfg = site_cfg_dir / "default.yaml"
+          if not site_default_cfg.exists():
+              site_default_cfg.write_text(textwrap.dedent("""\
+          #############################
+          # Minimal placeholder config
+          #############################
+          agent:
+            name: placeholder
+          """))
 
           print(f"✓ sweagent installed at {pkg_dir}")
           print(f"✓ ensured {cfg_dir} exists with a placeholder config")
+          print(f"✓ ensured {site_cfg_dir} exists with a placeholder config")
           PY
 
-                    # Lightweight version check
-                    python - <<'PY'
-          import importlib.metadata
+          # Debug: print where Python thinks sweagent is installed
+          python - <<'PY'
+          import importlib.metadata, site, os
           print("sweagent version:", importlib.metadata.version("sweagent"))
+          print("Python site-packages:", site.getsitepackages()[0])
+          print("Checking config locations:")
+          for path in ["/opt/hostedtoolcache/Python/3.12.10/x64/lib/python3.12/site-packages/config",
+                      "/opt/hostedtoolcache/Python/3.12.10/x64/lib/python3.12/site-packages/sweagent/config"]:
+              print(f"- {path}: {'exists' if os.path.isdir(path) else 'missing'}")
           PY
 
           which sweagent || { echo "sweagent CLI not in PATH"; exit 1; }
