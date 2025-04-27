@@ -45,7 +45,7 @@ jobs:
 
       # 4a) Install Slither
       - name: Install Slither
-        run: python -m pip install --quiet slither-analyzer
+        run: python -m pip install --quiet "slither-analyzer>=0.11.2"
 
       # 4b) Install Foundry
       - name: Cache Foundry directory
@@ -80,12 +80,13 @@ jobs:
           forge --version
 
       # 4c) Install SWE-Agent & SWE-ReX (from GitHub releases)
-      - name: Install SWE-Agent v1.3.0 and SWE-ReX v1.2.1
+      - name: Install SWE-Agent v1.3.1 and SWE-ReX v1.2.1
         run: |
-          # Install specific versions from GitHub
+          # Install specific versions from PyPI
           python -m pip install --quiet --no-cache-dir \
-            "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@v1.3.0" \
-            "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@v1.2.1"
+            "sweagent==1.3.1" \
+            "swe-rex==1.2.1" \
+            "openai==1.25.0"                   # explicit openai client, matches SA 1.3.x
           # Verify installation
           sweagent --version
           which sweagent || { echo "sweagent not found in PATH after install"; exit 1; }
@@ -101,7 +102,12 @@ jobs:
         run: |
           echo "PATH after Docker setup: $PATH"
           cat $GITHUB_PATH
-          which forge || echo "forge not found in PATH"
+          # skip redundant Foundry install if cache hit
+          if [[ "${{ steps.cache-foundry.outputs.cache-hit }}" == 'true' ]]; then
+            echo "Foundry cache hit – skipping binary path export"
+          else
+            which forge || echo "forge not found in PATH"
+          fi
 
       # 6) Build Phase 3 Required Docker Image
       - name: Build Phase 3 Docker Image
@@ -109,15 +115,16 @@ jobs:
         run: |
           ARCH=$(dpkg --print-architecture)
           BASE_TAG="foundry_sol:0.4.6" # UPDATED base tag to 0.4.6
-          ARCH_TAG="${BASE_TAG}-${ARCH}" # Define arch-specific tag
+          ARCH_TAG="${BASE_TAG}-${ARCH}"       # Define arch-specific tag
           echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
           # Build with ARCH tag, also tag with BASE tag
-          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" -t "${BASE_TAG}" -f src/solai/docker/foundry_sol.Dockerfile .
+          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" \
+                      -f src/solai/docker/foundry_sol.Dockerfile .
           echo "--- Docker image build finished ---"
           # Verify both tags exist
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${BASE_TAG}$" || { echo "❌ Failed to build or tag image ${BASE_TAG} correctly"; exit 1; }
-          echo "✓ Images ${ARCH_TAG} and ${BASE_TAG} built successfully."
+          # Only verify the arch-specific tag; we stopped writing the generic one
+          echo "✓ Image ${ARCH_TAG} built successfully."
           # Output the ARCH-specific tag for subsequent steps (swe.yaml update, container ID search)
           echo "image_tag=${ARCH_TAG}" >> $GITHUB_OUTPUT
 
@@ -181,7 +188,7 @@ jobs:
           LOGFILE="run_${TS}.log"
           
           # Ensure OpenAI key is set
-          [[ -n "${OPENAI_API_KEY-}" ]] || { echo "❌ OPENAI_API_KEY is not set in env"; exit 1; }
+          : "${OPENAI_API_KEY:?OPENAI_API_KEY not set}"   # safer secret check
 
           # Run swerex-remote, capture exit code, and attempt to get logs
           set +e # Allow the command to fail so we can capture logs

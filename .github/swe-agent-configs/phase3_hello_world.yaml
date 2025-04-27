@@ -12,6 +12,8 @@ env:
   deployment:
     # image: foundry_sol:0.4.5-amd64 # Original static tag
     image: DYNAMIC_IMAGE_TAG_PLACEHOLDER # Placeholder for dynamic replacement
+budget:               # ⬅︎ hard cost-cap (supported in SA ≥ 1.2.0)
+  usd_cap: 0.20
 
 # usd_cap: 0.20 # Removed - Invalid field for v1.0.1 
 
