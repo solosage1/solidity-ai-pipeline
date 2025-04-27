@@ -145,8 +145,8 @@ jobs:
           echo "✓ Checkpoint 1 Passed"
           
           echo "--- 2️⃣ Authoring minimal swe.yaml ---"
-          # Copy the pre-defined config file instead of using heredoc
-          cp .github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
+          # Copy the pre-defined config file using the correct workspace path
+          cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
           echo "✓ Copied swe.yaml config file"
 
           echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
