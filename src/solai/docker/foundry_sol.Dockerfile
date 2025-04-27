@@ -10,14 +10,17 @@ RUN apt-get update \
  && python3 -m pip install --upgrade pip \
  # Install Slither in the global site-packages
  && python3 -m pip install --no-cache-dir slither-analyzer \
- # Install pipx & SWE-ReX inside its own venv
+ # Install pipx
  && python3 -m pip install --no-cache-dir pipx \
- && pipx install swe-rex \
+ # Install SWE-ReX via pipx, forcing overwrite, and verify installation
+ && pipx install --force swe-rex \
+ && ls -l /root/.local/bin/swerex-remote \
+ && /root/.local/bin/swerex-remote --version \
  # Clean up apt cache
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Expose pipx shims & Slither
 ENV PATH="/root/.local/bin:$PATH"
 
-# Helpful for humans: show versions at build-time
-RUN forge --version && slither --version && swerex-remote --version 
+# Helpful for humans: show versions at build-time (redundant for swerex now, but keep for others)
+RUN forge --version && slither --version 
