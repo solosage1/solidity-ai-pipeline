@@ -68,7 +68,7 @@ jobs:
           printf "Comparing current requirements.txt with newly compiled version...\n"
           diff -u "$tmp_current_filtered" "$tmp_compiled_filtered" || {
             printf "::error::requirements.txt is out of sync with constraints.txt.\n"
-            printf "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes.\n"
+            printf "Please run '\''pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt'\'' and commit the changes.\n"
             rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered" # Clean up temp files
             exit 1
           }
