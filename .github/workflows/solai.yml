@@ -80,13 +80,12 @@ jobs:
           forge --version
 
       # 4c) Install SWE-Agent & SWE-ReX (from GitHub releases)
-      - name: Install SWE-Agent v1.3.1 and SWE-ReX v1.2.1
+      - name: Install SWE-Agent v1.0.1
         run: |
-          # Install specific versions from PyPI
           python -m pip install --quiet --no-cache-dir \
-            "sweagent==1.3.1" \
-            "swe-rex==1.2.1" \
-            "openai==1.25.0"                   # explicit openai client, matches SA 1.3.x
+          "git+https://github.com/SWE-agent/SWE-agent.git@v1.0.1" \
+          "git+https://github.com/SWE-agent/SWE-ReX.git@main" \
+          "openai==1.25.0"                   # explicit openai client dependency
           # Verify installation
           sweagent --version
           which sweagent || { echo "sweagent not found in PATH after install"; exit 1; }
