@@ -54,10 +54,11 @@ jobs:
       - name: Verify pip-compile Resolution Consistency
         run: |
           set -e
-          echo "--- Running pip-compile consistency pre-check (ignoring comments) ---"
-          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -v '^#') \
-                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -v '^#') || \
-            (echo "Error: pip-compile resolution inconsistency detected." && exit 1)
+          echo "--- Running pip-compile consistency pre-check (filtering comments/via, trimming whitespace, sorting) ---"
+          # Compare sorted, filtered output of normal run vs. dry run
+          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) \\
+                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) || \\
+            (echo "Error: pip-compile resolution inconsistency detected. Outputs differ even after filtering, trimming, and sorting." && exit 1)
           echo "--- Consistency check passed ---"
 
       - name: Generate Hashed Constraints # Create hash-pinned file
