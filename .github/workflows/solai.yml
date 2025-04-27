@@ -189,9 +189,11 @@ jobs:
         run: |
           set -e # Exit immediately if a command exits with a non-zero status.
           shopt -s nullglob   # expand globs to zero args when no match
-          wheel_path_glob=dist/solai-*.whl
           # Use array expansion to safely handle glob patterns (avoids issues with spaces, finds multiple/no files)
-          wheel_files=( $wheel_path_glob )
+          wheel_files=()
+          while IFS= read -r -d '' file; do
+            wheel_files+=("$file")
+          done < <(find dist -maxdepth 1 -name 'solai-*.whl' -print0)
 
           # Check if cache hit AND exactly one wheel file exists
           if [[ "${{ steps.cache-wheel-restore.outputs.cache-hit }}" == 'true' && -e "${wheel_files[0]}" && ${#wheel_files[@]} -eq 1 ]]; then
@@ -214,7 +216,11 @@ jobs:
             python -m build --wheel
 
             # Re-check for the wheel file after build
-            wheel_files_after_build=( $wheel_path_glob )
+            wheel_files_after_build=()
+            while IFS= read -r -d '' file; do
+              wheel_files_after_build+=("$file")
+            done < <(find dist -maxdepth 1 -name 'solai-*.whl' -print0)
+            
             if [[ -e "${wheel_files_after_build[0]}" && ${#wheel_files_after_build[@]} -eq 1 ]]; then
               wheel_file="${wheel_files_after_build[0]}"
               echo "Installing newly built wheel: ${wheel_file}"
