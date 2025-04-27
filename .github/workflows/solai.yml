@@ -272,11 +272,11 @@ jobs:
           printf '%s\n' "✓ Updated swe.yaml to use image: $TARGET_IMAGE_TAG"
 
           printf '%s\n' '--- 2b️⃣ Linting swe.yaml config ---'
-          if ! sweagent lint-config swe.yaml; then
-            printf '%s\n' '❌ swe.yaml validation failed'
+          if ! sweagent inspect swe.yaml; then
+            printf '%s\n' '❌ swe.yaml inspection failed'
             exit 1
           fi
-          printf '%s\n' '✓ swe.yaml valid'
+          printf '%s\n' '✓ swe.yaml configuration valid'
 
           printf '%s\n' '--- 3️⃣ Running SHE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
