@@ -64,59 +64,13 @@ jobs:
         env:
           SHELLCHECK_OPTS: -e SC2148
 
-      - name: Build wheel for lint job
-        run: python -m build --wheel
-
-      - name: Cache Built Wheel # P1: Cache the dist directory
-        uses: actions/cache@v4
+      - name: Build or restore solai wheel
+        id: wheel-lint
+        uses: ./.github/actions/build-wheel
         with:
-          path: dist
-          key: ${{ github.sha }}-wheel
+          cache-key: ${{ github.sha }}-wheel
 
-      - name: Install wheel and test dependencies # Updated name and command
-        run: |
-          set -e
-          # Install the built wheel
-          wheel_file=$(find dist -maxdepth 1 -name 'solai-*.whl' -print -quit)
-          if [[ -z "$wheel_file" ]]; then
-            echo "::error::Wheel file not found in dist/ directory."
-            ls -l dist/ # List contents for debugging
-            exit 1
-          fi
-          echo "Installing wheel: ${wheel_file}"
-          python -m pip install --quiet "${wheel_file}"
-
-          # Install dependencies from lock file, respecting hashes
-          echo "Installing dependencies from requirements.txt"
-          # Separate Git and PyPI dependencies
-          tmp_git_reqs=$(mktemp)
-          tmp_pypi_reqs=$(mktemp)
-          filtered_pypi=$(mktemp)
-          grep    '@ git+' requirements.txt > "$tmp_git_reqs"  || true # Allow empty file
-          grep -v '@ git+' requirements.txt > "$tmp_pypi_reqs" || true # Allow empty file
-
-          # Install Git dependencies first (no hash check possible)
-          if [[ -s "$tmp_git_reqs" ]]; then
-            echo "Installing Git dependencies..."
-            python -m pip install --quiet --no-cache-dir -r "$tmp_git_reqs"
-          else
-            echo "No Git dependencies found."
-          fi
-
-          # Install PyPI dependencies with hash checking, excluding dev/unsafe tools
-          if [[ -s "$tmp_pypi_reqs" ]]; then
-            echo "Installing PyPI dependencies with hash checking..."
-            # Filter out dev/unsafe tools that break --require-hashes
-            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" | tee "$filtered_pypi"
-            python -m pip install --quiet --no-cache-dir -r "$filtered_pypi" --require-hashes
-          else
-            echo "No PyPI dependencies found."
-          fi
-
-          # Clean up temp files
-          rm "$tmp_git_reqs" "$tmp_pypi_reqs" "$filtered_pypi"
-
-      - name: Check pip dependencies (lint job)
+      - name: Check pip dependencies
         run: python -m pip check
 
       - name: Run tests & Generate Coverage XML # P2: Generate coverage.xml
@@ -178,58 +132,12 @@ jobs:
         run: ci/verify_lock.sh
 
       # 4) Install your wheel + AI backends via pip
-      - name: Restore Cached Wheel # P1: Restore wheel from lint job cache
-        id: cache-wheel-restore
-        uses: actions/cache@v4
+      - name: Build or restore solai wheel
+        id: wheel-phase3
+        uses: ./.github/actions/build-wheel
         with:
-          path: dist
-          key: ${{ github.sha }}-wheel # Must match the save key
+          cache-key: ${{ github.sha }}-wheel
 
-      - name: Install solai wheel (from cache or build) # P1: Use cached wheel
-        run: |
-          set -e # Exit immediately if a command exits with a non-zero status.
-          # Use find to safely handle glob patterns (avoids issues with spaces and special characters)
-          wheel_files=()
-          while IFS= read -r -d '' file; do
-            wheel_files+=("$file")
-          done < <(find dist -maxdepth 1 -name 'solai-*.whl' -print0)
-
-          # Check if cache hit AND exactly one wheel file exists
-          if [[ "${{ steps.cache-wheel-restore.outputs.cache-hit }}" == 'true' && -e "${wheel_files[0]}" && ${#wheel_files[@]} -eq 1 ]]; then
-            wheel_file="${wheel_files[0]}" # Assign the exact filename
-            echo "Installing wheel from cache: ${wheel_file}"
-            python -m pip install --quiet "${wheel_file}"
-          else
-            # Provide clearer feedback based on cache status
-            if [[ "${{ steps.cache-wheel-restore.outputs.cache-hit }}" == 'true' ]]; then
-               # Cache hit but file missing/wrong count
-               echo "Warning: Wheel cache hit, but wheel file missing or unexpected count (${#wheel_files[@]}). Rebuilding."
-            else
-               echo "Wheel cache miss. Building and installing wheel."
-            fi
-
-            # Build the wheel
-            echo "Building wheel..."
-            python -m build --wheel
-
-            # Re-check for the wheel file after build
-            wheel_files_after_build=()
-            while IFS= read -r -d '' file; do
-              wheel_files_after_build+=("$file")
-            done < <(find dist -maxdepth 1 -name 'solai-*.whl' -print0)
-            
-            if [[ -e "${wheel_files_after_build[0]}" && ${#wheel_files_after_build[@]} -eq 1 ]]; then
-              wheel_file="${wheel_files_after_build[0]}"
-              echo "Installing newly built wheel: ${wheel_file}"
-              python -m pip install --quiet "${wheel_file}"
-            else
-              echo "Error: Could not find exactly one wheel file in dist/ after build. Found ${#wheel_files_after_build[@]} files."
-              ls -l dist/
-              exit 1
-            fi
-          fi
-
-      # Centralize PyYAML install for syntax checking later
       - name: Install PyYAML
         run: python -m pip install --quiet pyyaml
 
@@ -263,6 +171,8 @@ jobs:
       - name: Install Foundry
         if: steps.cache-foundry.outputs.cache-hit != 'true'
         run: |
+          python -m build --wheel --no-isolation
+
           # 1) Create Foundry directory
           mkdir -p "${FOUNDRY_DIR}/bin"
           # 2) Download foundryup directly into the standard dir

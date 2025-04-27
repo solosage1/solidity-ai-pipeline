@@ -1,0 +1,57 @@
+name: "Build or Restore Wheel"
+description: |
+  Restores the cached wheel if present, otherwise builds it (no-isolation),
+  and outputs the path to the wheel.
+inputs:
+  cache-key:
+    description: "Cache key for dist/"
+    required: true
+outputs:
+  wheel-path:
+    description: "Full path to the built or restored wheel file"
+    value: ${{ steps.findwheel.outputs.wheel-path }}
+runs:
+  using: composite
+  steps:
+    - name: Ensure build backend is present
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --quiet build
+
+    - name: Restore wheel from cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: dist
+        key: ${{ inputs.cache-key }}
+
+    - name: Build wheel if cache missed
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Cache miss → building wheel"
+        python -m build --wheel --no-isolation
+
+    - name: Locate wheel
+      id: findwheel
+      shell: bash
+      run: |
+        set -euo pipefail
+        wheel=$(find dist -maxdepth 1 -name 'solai-*.whl' -print -quit)
+        if [[ -z "$wheel" ]]; then
+          echo "::error::No wheel found in dist/"
+          exit 1
+        fi
+        echo "wheel-path=$wheel" >> "$GITHUB_OUTPUT"
+
+    - name: Install wheel
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --quiet "${{ steps.findwheel.outputs.wheel-path }}"
+
+    - name: Expose output for callers
+      shell: bash
+      run: echo "wheel-path=${{ steps.findwheel.outputs.wheel-path }}" >> "$GITHUB_OUTPUT" 
