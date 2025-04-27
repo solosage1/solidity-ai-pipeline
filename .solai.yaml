@@ -4,7 +4,7 @@ agent:
   repo_prompt: "Fix failing tests"
 
 env:
-  docker_image: foundry_sol:0.4.4
+  docker_image: foundry_sol:0.4.4-amd64
   swe_rex_bin: swerex-remote
   post_startup_cmds:
     - ["forge", "test", "-q"]
