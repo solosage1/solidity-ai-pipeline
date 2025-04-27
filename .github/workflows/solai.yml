@@ -125,7 +125,7 @@ jobs:
         run: |
           # Exact commit SHA for reproducibility (tag v1.0.1).
           python -m pip install --quiet --no-cache-dir \
-            "git+https://github.com/swe-agent/swe-agent@3d6e1f2b1f4e02b6c847a0b7ac7d73d8d3cfe2e" \
+            "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
             "swe-rex==1.2.1" \
             "openai>=1.75.0,<2"
           # ------------------------------------------------------------------
