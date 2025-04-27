@@ -145,24 +145,26 @@ jobs:
           echo "✓ Checkpoint 1 Passed"
           
           echo "--- 2️⃣ Authoring minimal swe.yaml ---"
-          cat > swe.yaml << 'YAML'
-          open_pr: false
-          apply_patch_locally: true
-          
-          problem_statement:
-            repo_path: .
-            text: "Fix failing tests"
-          
-          agent:
-            # model: gpt-4o-2024-05-13 # Using mini for cost-effectiveness
-            # Use gpt-4o-mini for faster/cheaper runs if preferred
-            model: gpt-4o-mini
-            usd_cap: 0.20
-          
-          env:
-            deployment:
-              image: foundry_sol:0.4.4
-          YAML
+          cat > swe.yaml << EOF
+problem_statement:
+  text: "Fix failing tests"
+
+agent:
+  model:
+    name: gpt-4o-mini
+    usd_cap: 0.20
+  action_sampler: {}
+
+env:
+  repo:
+    path: .
+  deployment:
+    image: foundry_sol:0.4.4
+
+actions:
+  open_pr: false
+  apply_patch_locally: true
+EOF
 
           # Validate YAML
           python -c 'import yaml, sys; yaml.safe_load(open("swe.yaml")); print("✓ YAML valid")'
