@@ -66,11 +66,17 @@ jobs:
           which forge
           forge --version
 
-      # 4c) Install SWE-ReX (assuming pip install)
+      # 4c) Install SWE-ReX (from source)
       - name: Install SWE-ReX
         run: |
-          python -m pip install swerex-remote
-          which swerex-remote # Verify installation
+          git clone https://github.com/SWE-agent/SWE-agent.git
+          cd SWE-agent
+          python -m pip install --upgrade pip
+          python -m pip install --editable .
+          cd ..
+          which sweagent || echo "sweagent not found in PATH"
+          # Test if swerex-remote is available
+          python -c "from sweagent.cli import main; print('✓ SWE-ReX installed successfully')" || echo "❌ Failed to import sweagent"
 
       # 5) Set up Docker
       - name: Set up QEMU emulation
