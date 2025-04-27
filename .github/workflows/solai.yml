@@ -188,8 +188,7 @@ jobs:
       - name: Install solai wheel (from cache or build) # P1: Use cached wheel
         run: |
           set -e # Exit immediately if a command exits with a non-zero status.
-          shopt -s nullglob   # expand globs to zero args when no match
-          # Use array expansion to safely handle glob patterns (avoids issues with spaces, finds multiple/no files)
+          # Use find to safely handle glob patterns (avoids issues with spaces and special characters)
           wheel_files=()
           while IFS= read -r -d '' file; do
             wheel_files+=("$file")
@@ -226,7 +225,7 @@ jobs:
               echo "Installing newly built wheel: ${wheel_file}"
               python -m pip install --quiet "${wheel_file}"
             else
-              echo "Error: Could not find exactly one wheel file (${wheel_path_glob}) after build. Found ${#wheel_files_after_build[@]} files."
+              echo "Error: Could not find exactly one wheel file in dist/ after build. Found ${#wheel_files_after_build[@]} files."
               ls -l dist/
               exit 1
             fi
