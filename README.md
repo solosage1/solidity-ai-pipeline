@@ -1,6 +1,6 @@
 # solai – Solidity AI Pipeline
 
-[![solai-phase3-hello-world](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml)
+![Phase 3](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
 
 > **Plug-and-play pipeline to automatically diagnose & fix failing Solidity tests with GPT-4o-mini, Foundry & Slither.**
 

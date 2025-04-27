@@ -11,6 +11,7 @@ env:
   PIP_CACHE_PREFIX: pip-lint-test
 
 jobs:
+  # quick syntax check of GH workflow
   lint-workflow:
     runs-on: ubuntu-latest
     steps:
@@ -32,16 +33,27 @@ jobs:
         with:
           path: ~/.cache/pip
           # Key includes Python version, OS, requirements hash, and our prefix
-          key: ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          key: ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-py3.12-${{ hashFiles('pyproject.toml', 'tests/**.py', 'scripts/setup_stub_pkgs.py') }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-${{ matrix.python-version }}-
+            ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-py3.12-
             ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-
 
-      - name: Install and run linters + tests
+      - name: Run actionlint (GitHub Workflow lint)
+        uses: reviewdog/action-actionlint@v1
+        with:
+          reporter: github-pr-check
+
+      - name: Lint Python code with Ruff
+        uses: chartboost/ruff-action@v1
+
+      - name: Lint shell scripts with ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ci
+
+      - name: Install and run tests
         run: |
-          python -m pip install --quiet actionlint "pytest<9"
-          echo "--- Running actionlint ---"
-          actionlint -color .github/workflows/solai.yml
+          python -m pip install --quiet "pytest<9"
           echo "--- Running pytest ---"
           pytest -q # No explicit path, discovers tests automatically
 
@@ -168,7 +180,7 @@ jobs:
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
             "swe-rex==1.2.1" \
-            "openai>=1.76,<1.77" # Use range pinning
+            "openai==1.76.1"  # reproducible pin
 
           echo "+++ Creating runtime stubs ..."
           python scripts/setup_stub_pkgs.py
@@ -191,225 +203,14 @@ jobs:
           echo "--- Original import smoke-test finished."
 
       # 7) Run Phase 3 Hello-World Test
-      - name: Phase 3 - SWE-Agent Run  # single sudo, stripped user-site path
+      - name: Phase 3 - SWE-Agent Run
         id: swe_agent_run_step
         env:
-          # Define secret in step env (sudo -E will forward)
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PYBIN_DIR: ${{ env.PYBIN_DIR }}
-          # FOUNDRY_DIR is accessed from the job env within the BASH script
-        # Use explicit python interpreter. API key forwarded by sudo -E.
-        # Quote the shell command string to handle ${{...}} safely for linters.
-        shell: "sudo -E \"$PYBIN_DIR/python\" - <<'BASH'"
-        run: |
-          set -euo pipefail
-          # This script now runs via the specific python interpreter.
-
-          # PATH is handled by GITHUB_PATH setup earlier, no need to export here
-          # if [ -z "$FOUNDRY_DIR" ]; then ... ; fi # Check removed, assume GITHUB_PATH works
-          # export PATH="$FOUNDRY_DIR/bin:$PATH" # Removed
-
-          # Verify sweagent CLI is callable *through the python interpreter*
-          if ! python -m sweagent --version > /dev/null 2>&1; then
-              echo "❌ sweagent command not runnable via $PYBIN_DIR/python -m"
-              exit 1
-          fi
-          echo "✓ sweagent command runnable via python -m"
-
-          # 1️⃣ Create isolated failing demo repo
-          cd /tmp && rm -rf demo && mkdir demo && cd demo
-          git init -q
-
-          cat > Greeter.sol << 'SOL'
-          pragma solidity ^0.8.26;
-          contract Greeter {
-              string private greeting = "hello";
-              function greet() external view returns (string memory) {
-                  return greeting;
-              }
-          }
-          SOL
-
-          # align heredoc indentation
-          cat > Greeter.t.sol << 'SOLTEST'
-          pragma solidity ^0.8.26;
-          import "forge-std/Test.sol";
-          import "./Greeter.sol";
-
-          contract GreeterTest is Test {
-              Greeter g;
-              function setUp() public { g = new Greeter(); }
-              /// @notice Wrong on purpose
-              function testGreetingFails() public {
-                  assertEq(g.greet(), "HELLO");
-              }
-          }
-          SOLTEST
-
-          # Expect failure – baseline should be red.
-          if forge test -q 2>/dev/null; then
-            printf '%s\n' '❌ tests unexpectedly green'
-            exit 1
-          else
-            printf '%s\n' '✓ baseline red (silenced warning)'
-          fi
-
-          if ! grep -q '"HELLO"' Greeter.t.sol; then
-            printf '%s\n' '❌ HELLO literal missing'
-            exit 1
-          fi
-          printf '%s\n' '✓ Checkpoint 1 Passed'
-
-          printf '%s\n' '--- 2️⃣ Creating minimal valid swe.yaml ---'
-          cat > swe.yaml << 'YAML'
-          problem_statement:
-            text: "Fix failing tests"
-
-          agent:
-            model:
-              name: gpt-4o-mini
-            # Add spending cap
-            usd_cap: 0.20
-            action_sampler: {}
-
-          env:
-            repo:
-              path: .
-            deployment:
-              type: local
-
-          actions:
-            open_pr: false
-            apply_patch_locally: true
-          YAML
-          printf '%s\n' "✓ Created swe.yaml with local deployment"
-
-          printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
-          # First check basic YAML syntax
-          # NOTE: We must use the explicit python interpreter here too!
-          "$PYBIN_DIR/python" - << 'PY'
-          import yaml, sys
-          try:
-              yaml.safe_load(open("swe.yaml"))
-              print("✓ swe.yaml valid YAML syntax")
-          except Exception as e:
-              print("❌ swe.yaml syntax error detected. Please review the file format and indentation.")
-              print(e)
-              sys.exit(1)
-          PY
-
-          # Optional YAML debug output
-          if [[ "$DEBUG" == "true" ]]; then
-            echo "--- swe.yaml content preview ---"
-            cat swe.yaml
-            echo "---------------------------------"
-          fi
-
-          # Do a schema-only check if supported by sweagent CLI
-          if sweagent --help | grep -q -- "--dry-run"; then
-            printf '%s\n' "--- 2c️⃣ Performing schema validation with --dry-run ---"
-            if ! sweagent run --config swe.yaml --dry-run; then
-              printf '%s\n' "❌ Schema validation failed - config structure doesn't match SWE-agent v1.0.1 requirements"
-              exit 1
-            fi
-            printf '%s\n' "✓ Schema validation passed"
-          else
-            printf '%s\n' "--- 2c️⃣ Skipping schema validation (--dry-run not supported) ---"
-          fi
-
-          printf '%s\n' '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---'
-          TS=$(date +%Y%m%dT%H%M%S)
-          LOGFILE="run_${TS}.log"
-
-          # Define the main command - now run via python -m
-          SWE_AGENT_CMD="\"$PYBIN_DIR/python\" -m sweagent run --config swe.yaml --output_dir ."
-          if [[ "${DEBUG}" == "true" ]]; then
-            SWE_AGENT_CMD="${SWE_AGENT_CMD} --verbose"
-          fi
-
-          set +e
-          eval "$SWE_AGENT_CMD" 2>&1 | tee "$LOGFILE"
-          ret=$?
-          set -e
-
-          printf '%s\n' "--- 🩺 Exit Code: $ret"
-          if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
-            # Always print the full sweagent log on failure
-            printf '%s\n' "--- 📝 Full sweagent log contents ($LOGFILE) ---"
-            cat "$LOGFILE"
-            printf '%s\n' '❌ SWE-Agent run failed or patch missing'
-            exit 1
-          fi
-
-          printf '%s\n' '✓ Agent produced patch.tar'
-          printf '%s\n' '--- 4️⃣ Applying patch... ---'
-          tar -xf patch.tar
-          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][ft]' -print0)
-
-          if [ "${#patch_files[@]}" -eq 0 ]; then
-            printf '%s\n' '❌ No patch files'
-            exit 1
-          fi
-
-          for p in "${patch_files[@]}"; do
-            [ -z "$p" ] && continue
-            printf '%s\n' "→ validating $p"
-            size=$(stat -c%s "$p")
-            [ "$size" -lt 100000 ] || { printf '%s\n' "💥 $p too large"; exit 1; }
-
-            git apply --stat "$p" > stat.txt
-            loc_ins=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s}')
-            loc_del=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s}')
-            total=$((loc_ins+loc_del))
-            [ "$total" -le 2000 ] || { printf '%s\n' "💥 patch $p changes $total LOC"; exit 1; }
-
-            printf '%s\n' "Applying $p"
-            git apply "$p" || { printf '%s\n' "❌ apply failed $p"; exit 1; }
-          done
-
-          # Verify tests pass after patch
-          if forge test -q; then
-            printf '%s\n' '✓ tests green after patch'
-          else
-            printf '%s\n' '❌ tests still failing'
-            git diff
-            exit 1
-          fi
-
-          # Always run Slither after successful patch application (inside Docker)
-          printf '%s\n' '--- 4b Running Slither inside Docker ---'
-          # Define the docker image name - ensure it matches build/pull steps if applicable
-          # Assuming image is available locally from previous steps or pulled
-          # If image name needs versioning, adjust here.
-          DOCKER_IMG="foundry_sol:latest" # Or use a more specific tag like 0.4.4 if available
-          if docker image inspect "$DOCKER_IMG" &> /dev/null; then
-              echo "Running slither using image: $DOCKER_IMG"
-              # Run Slither inside the container, mounting current dir
-              # Use docker run --rm to clean up container afterwards
-              docker run --rm -v "$PWD":/src "$DOCKER_IMG" slither /src --exclude-dependencies --disable-color > slither.txt || \
-                  echo "Slither returned non-zero exit code, proceeding..."
-              echo "Slither analysis complete."
-          else
-               echo "Warning: Docker image $DOCKER_IMG not found. Skipping Slither analysis." >&2
-               # Create empty file so bundling step doesn't fail if it expects it
-               touch slither.txt
-          fi
-
-          printf '%s\n' '--- 5️⃣ Bundling evidence ---'
-          mkdir -p .evidence
-          # Handle potential missing stat.txt gracefully
-          [ -f stat.txt ] && mv stat.txt .evidence/
-          # Always move slither.txt (even if empty or from failed run)
-          [ -f slither.txt ] && mv slither.txt .evidence/
-          mv patch.tar "$LOGFILE" .evidence/
-          TB="phase3_evidence_${TS}.tgz"
-          tar -czf "$TB" .evidence
-          # Move bundle to /tmp for upload
-          mv "$TB" /tmp/
-          echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "✅ Evidence: $TB"
-        # The BASH heredoc is terminated by the shell command's syntax,
-        # not an explicit marker in the YAML content here.
+        # only preserve the two env vars
+        shell: sudo --preserve-env=OPENAI_API_KEY,PYBIN_DIR bash -e {0}
+        run: ci/phase3.sh
 
       # 8) Upload Phase 3 Evidence Bundle
       - name: Upload Phase 3 Evidence

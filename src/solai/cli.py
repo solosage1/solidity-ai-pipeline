@@ -5,10 +5,14 @@ from solai.runner import run_backlog, doctor as run_doctor
 
 app = typer.Typer(help="ℹ  Solidity AI pipeline CLI")
 
+
 # ----- init --------------------------------------------------
 @app.command()
-def init(update: bool = typer.Option(False, "-u", "--update",
-                                     help="Refresh templates if they already exist")):
+def init(
+    update: bool = typer.Option(
+        False, "-u", "--update", help="Refresh templates if they already exist"
+    ),
+):
     """Inject template files into current repo."""
     root = Path.cwd()
     tdir = pkg.files("solai.templates")
@@ -19,7 +23,7 @@ def init(update: bool = typer.Option(False, "-u", "--update",
             continue
         shutil.copy(tdir / tmpl, tgt)
         typer.echo(f"✓ {tgt.relative_to(root)} written")
-    
+
     # Handle gitignore snippet
     gitignore = root / ".gitignore"
     if gitignore.exists():
@@ -28,7 +32,7 @@ def init(update: bool = typer.Option(False, "-u", "--update",
             with open(gitignore, "a") as f:
                 f.write("\n" + (root / ".gitignore_snip.txt").read_text())
             typer.echo("✓ .gitignore updated with solai patterns")
-    
+
     typer.echo("✅  Run `make bootstrap-solai`")
 
     # ---- placeholder digest warning ------------------------------------
@@ -39,17 +43,23 @@ def init(update: bool = typer.Option(False, "-u", "--update",
             typer.secho(
                 "⚠  .solai.yaml still has placeholder_digest — "
                 "run `solai image-rebuild` and update the file.",
-                fg="yellow")
+                fg="yellow",
+            )
+
 
 # ----- run ---------------------------------------------------
 @app.command()
-def run(config: Path = Path(".solai.yaml"),
-        once: bool = typer.Option(False, "--once/--watch",
-                                  help="Exit after one backlog pass"),
-        max_concurrency: int = typer.Option(4),
-        log_file: Path = typer.Option(".solai/logs/run.log")):
+def run(
+    config: Path = Path(".solai.yaml"),
+    once: bool = typer.Option(
+        False, "--once/--watch", help="Exit after one backlog pass"
+    ),
+    max_concurrency: int = typer.Option(4),
+    log_file: Path = typer.Option(".solai/logs/run.log"),
+):
     """Run backlog tasks."""
     run_backlog(config, once, max_concurrency, log_file)
+
 
 # ----- doctor -----------------------------------------------
 @app.command()
@@ -57,11 +67,14 @@ def doctor():
     """Environment self-test."""
     run_doctor()
 
+
 @app.command("image-rebuild")
 def image_rebuild():
     """Rebuild & push foundry_sol image, update digest in .solai.yaml."""
     from solai.runner import rebuild_image
+
     rebuild_image()
 
+
 if __name__ == "__main__":
-    app() 
+    app()
