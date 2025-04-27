@@ -107,10 +107,12 @@ jobs:
             echo "No Git dependencies found."
           fi
 
-          # Install PyPI dependencies with hash checking
+          # Install PyPI dependencies with hash checking, excluding dev/unsafe tools
           if [[ -s "$tmp_pypi_reqs" ]]; then
             echo "Installing PyPI dependencies with hash checking..."
-            python -m pip install --quiet --no-cache-dir -r "$tmp_pypi_reqs" --require-hashes
+            # Filter out dev/unsafe tools that break --require-hashes
+            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" \
+              | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
           else
             echo "No PyPI dependencies found."
           fi
@@ -319,10 +321,12 @@ jobs:
             echo "No Git dependencies found."
           fi
 
-          # Install PyPI dependencies with hash checking
+          # Install PyPI dependencies with hash checking, excluding dev/unsafe tools
           if [[ -s "$tmp_pypi_reqs" ]]; then
             echo "Installing PyPI dependencies with hash checking..."
-            python -m pip install --quiet --no-cache-dir -r "$tmp_pypi_reqs" --require-hashes
+            # Filter out dev/unsafe tools that break --require-hashes
+            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" \
+              | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
           else
             echo "No PyPI dependencies found."
           fi
