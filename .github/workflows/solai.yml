@@ -127,7 +127,7 @@ jobs:
       # 4e) Install SWE-Agent & SWE-ReX (GitHub tag v1.0.1)
       - name: Install SWE-Agent & SWE-ReX
         env:
-          DEBUG: ${{ env.DEBUG }}    # set to "true" for debug dumps
+          DEBUG: ${{ env.DEBUG }}    # set to "true" for debug dumps (prints paths)
         run: |
           python -m pip install --quiet --no-cache-dir \
             "git+https://github.com/swe-agent/swe-agent@v1.0.1" \
@@ -135,7 +135,7 @@ jobs:
             "openai>=1.75.0,<2"
 
           # ------------------------------------------------------------------
-          # Combined work-around: create config/tools dirs and optional debug
+          # Combined work-around: create config, tools & trajectories dirs; optional debug
           # ------------------------------------------------------------------
           python - <<'PY'
           import importlib.util, pathlib, sys, textwrap, site, os
@@ -147,9 +147,9 @@ jobs:
           pkg_dir = pathlib.Path(spec.origin).parent
           site_pkg = pathlib.Path(site.getsitepackages()[0])
 
-          # Create both config and tools directories
+          # Create config, tools, and trajectories directories
           for base in [pkg_dir, site_pkg]:
-              for sub in ("config", "tools"):
+              for sub in ("config", "tools", "trajectories"):
                   d = base / sub
                   d.mkdir(parents=True, exist_ok=True)
                   if sub == "config":
@@ -167,8 +167,14 @@ jobs:
           if os.getenv("DEBUG", "").lower() in ("1", "true"):
               print(f"sweagent pkg_dir: {pkg_dir}")
               print(f"site-packages base: {site_pkg}")
-              for path in (pkg_dir / "config", site_pkg / "config",
-                           pkg_dir.parent / "tools", site_pkg / "tools"):
+              for path in (
+                  pkg_dir / "config",
+                  site_pkg / "config",
+                  pkg_dir.parent / "tools",
+                  site_pkg / "tools",
+                  pkg_dir.parent / "trajectories",
+                  site_pkg / "trajectories",
+              ):
                   print(f"- {path}: {'exists' if path.exists() else 'missing'}")
           PY
 
