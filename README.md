@@ -1,123 +1,178 @@
-# solai
+# solai – Solidity AI Pipeline
 
-Plug-and-play AI improvement pipeline for Solidity projects.
+> **Plug-and-play pipeline to automatically diagnose & fix failing Solidity tests with GPT-4o-mini, Foundry & Slither.**
 
-## Installation
+---
 
-From PyPI (coming soon):
+## ✨ Features
+
+| What | How |
+|------|-----|
+| **One-command bootstrap** | `make bootstrap-solai` verifies host tools & installs missing Python, Foundry & Slither bits |
+| **Agent-powered fixes** | Wraps **SWE-Agent 1.0.1** + **SWE-ReX 1.2.1** – no glue code required |
+| **Works everywhere** | Linux, macOS, WSL2; GitHub Actions template included (<span style="color:#268bd2">`.github/workflows/solai-phase3-hello-world.yml`</span>) |
+| **Opinionated but hackable** | All behaviour lives in `swe.yaml` (model, cost limits, deployment target) |
+| **Doctor & self-heal** | `solai doctor` prints actionable checks + path fixes |
+
+---
+
+## 🔧 Installation
+
+### From PyPI *(coming soon)*
+
 ```bash
-pip install solai[ai]
+pip install "solai[ai]"              # installs solai + SWE-Agent + SWE-ReX + Slither
 ```
 
-From source:
+### From source (current workflow)
+
 ```bash
-# Clone the repository
 git clone https://github.com/solosage1/solidity-ai-pipeline.git
 cd solidity-ai-pipeline
 
-# Build the wheel
 python -m pip install --upgrade pip build
-python -m build
+python -m build                        # ↳ dist/solai-<version>.whl
 
-# Install the wheel with AI dependencies
-# This installs solai, sweagent, and swe-rex
-pip install dist/solai-*.whl[ai]
+pip install "dist/solai-*.whl[ai]"     # installs all runtime deps
 
-# Verify installation and environment
-# (This also runs `solai doctor`)
-make bootstrap-solai
+# verify & set up host
+make bootstrap-solai                   # runs `solai doctor` & fixes common issues
 ```
 
-The `bootstrap-solai` make target will:
-1. Verify the environment with `solai doctor`
-2. Ensure all dependencies are properly installed and accessible
-3. Set up any necessary local development tools (like checking pipx path)
+`make bootstrap-solai` will
 
-## SWE-ReX Authentication
+1. call **`solai doctor`** → checks Python, GPT keys, Docker, Foundry, Slither
+2. stub the missing `enterprise.*` modules required by SWE-Agent 1.0.1¹
+3. ensure **SWE-Agent CLI is discoverable under *root*** (see *PATH gotchas* below)
 
-The SWE-ReX service uses API key authentication. When making requests to the service:
+<sub>¹ Upstream will remove this quirk in 1.0.2 – until then we create
+`site-packages/enterprise/enterprise_hooks/session_handler.py` with no-op
+classes.</sub>
 
-1. The executable is named `swerex-remote` (not `swe-rex`)
-2. Authentication is done via the `X-API-Key` HTTP header
-3. The API key must be provided in the following ways:
-   - For HTTP requests: Include header `X-API-Key: your_api_key`
-   - For CLI usage: Use `swerex-remote --api-key your_api_key`
-   - For Python: Use headers dictionary `{"X-API-Key": "your_api_key"}`
+---
 
-## Quick Start
+## 🏃 Quick Start
 
 ```bash
-# In your Solidity project directory:
-solai init
-make bootstrap-solai
-solai run --once  # Run once and exit
-solai run         # Run continuously (default)
+# inside an existing Solidity repo
+solai init              # adds a default swe.yaml, .gitignore entries, etc.
+make bootstrap-solai    # verifies host & prints next steps
+solai run --once        # run agent once & exit (CI mode)
 ```
 
-## Requirements
+---
 
-- Python 3.12+
-- Docker
-- Foundry (installed via foundryup - automated in CI, manual install needed locally)
-    ```bash
-    # Local installation:
-    curl -L https://foundry.paradigm.xyz | bash
-    # Add foundry to your shell's PATH (e.g., in ~/.bashrc or ~/.zshrc)
-    # Example for bash/zsh: export PATH="$HOME/.foundry/bin:$PATH"
-    # Then run:
-    source ~/.bashrc # or ~/.zshrc or restart your terminal
-    foundryup
-    ```
-- Slither (installed automatically with `solai[ai]`)
-- SWE-ReX (installed automatically with `solai[ai]`)
-- SWE-Agent (installed automatically with `solai[ai]`)
+## 📜 Requirements
 
-## Environment Notes
+* **Python 3.12 +** (3.13 works but is still “provisional” for some libs)
+* **Foundry >= v1.6.5** – pinned so CI cache never busts
 
-- **WSL2** (Windows): For Windows users, run `solai` inside WSL2 to ensure full Docker & POSIX support.
-- **Docker RAM**: Allocate at least **6 GB** to Docker (Settings → Resources → Memory) for Foundry and SWE-Agent.
-- **Logs**: Detailed run output is written to `.solai/logs/run.log`; inspect this for troubleshooting.
+  ```bash
+  curl -L https://foundry.paradigm.xyz | bash
+  export PATH="$HOME/.foundry/bin:$PATH"
+  foundryup
+  ```
 
-## Docker RAM Requirements
+* **Docker Desktop / engine** – allocate **≥ 6 GB** RAM *(Settings → Resources)*
+* **Slither** – pulled in by `solai[ai]`
 
-**Docker RAM** – Foundry + SWE-Agent require ~6 GB.  
-Docker Desktop → Settings → Resources → Memory ≥ 6 GB.
+> **Windows** → use WSL2 - Ubuntu. Native Docker Desktop + Hyper-V is fine too but
+> most devs report smoother performance inside WSL2.
 
-## Implementation Details
+---
 
-For detailed summaries of the implementation phases, please refer to the documents in the specs directory:
+## 🔑 SWE-ReX / OpenAI keys
 
-- [Phase 1 Summary (v0.4.0)](specs/phase1_summary.md)
-- [Phase 2 Summary (v0.4.2)](specs/phase2_summary.md)
+| Variable | Purpose | Where |
+|----------|---------|-------|
+| `OPENAI_API_KEY` | LLM completions (SWE-Agent & ReX) | env / GitHub Secrets |
+| `SWE_REX_API_KEY` | authentication to remote ReX service | env / GitHub Secrets |
 
-### Running the Pipeline
+*HTTP requests* → send header `X-API-Key: $SWE_REX_API_KEY`  
+*CLI* → `swerex-remote --api-key $SWE_REX_API_KEY`
 
-Once configured, start the pipeline:
+---
+
+## 🐞 Troubleshooting & Path gotchas
+
+### 1 · `forge: command not found` under `sudo` (CI)
+
+`foundryup` installs binaries to `$HOME/.foundry/bin`.  The GitHub Action runs
+SWE-Agent **as root** to simplify write permissions.  Pre-pend the Foundry dir
+in your pipeline **before** calling the agent:
 
 ```bash
-# Run once and exit
-solai run --once --max-concurrency 1
-
-# Run continuously (default)
-solai run
-
-# Override the swe-rex binary location (if needed)
-export SWE_REX_BIN=/path/to/my/swe-rex
-solai run
+export PATH="$FOUNDRY_DIR/bin:$PATH"         # FOUNDRY_DIR is /home/runner/.config/.foundry in our template
 ```
 
-The agent (via `swerex-remote`) will then:
-1.  Clone your repo into a temporary worktree.
-2.  Checkout a new branch (e.g., `fix-demo`).
+### 2 · `/usr/bin/env: sweagent: No such file or directory`
 
-### Troubleshooting & FAQ
+When you `sudo -E`, root inherits *your* PATH but **not** venv *scripts* dirs.
+Add both the *user-site* and *system-site* `…/bin`:
 
-*   **Docker Issues:** Ensure Docker Desktop (or Docker Engine on Linux) is running and has sufficient resources allocated (>= 6GB RAM recommended).
-*   **`solai doctor` fails:** Follow the error messages to install missing tools or fix configuration.
-*   **Authentication:** `swerex-remote` needs API keys for the chosen model (e.g., `OPENAI_API_KEY`). See SWE-ReX documentation for details.
-*   **Q: I'm on an older system where the binary is still called `swe-rex`.**
-    **A:** Run `export SWE_REX_BIN=swe-rex` in your terminal before running `solai` commands.
+```bash
+export PATH="$(python3 -m site --user-base)/bin:$(python3 -c 'import site,sys;print(site.getsitepackages()[0]+"/bin")'):$PATH"
+```
 
-## Contributing
+(Our workflow already prepends these three segments in one line.)
 
-Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information on how to contribute to this project. 
+### 3 · `AssertionError: …/site-packages/config`
+
+SWE-Agent 1.0.1 expects `…/site-packages/config/default.yaml`.  We create a
+placeholder automatically during **bootstrap-solai**.  If you installed
+manually, run:
+
+```bash
+python - <<'PY'
+import pathlib, site, textwrap
+cfg = pathlib.Path(site.getsitepackages()[0]) / 'config' / 'default.yaml'
+cfg.parent.mkdir(parents=True, exist_ok=True)
+cfg.write_text(textwrap.dedent('''
+agent:
+  name: placeholder
+'''))
+PY
+```
+
+### 4 · Enterprise stubs
+
+Until the enterprise hooks land on PyPI run:
+
+```bash
+python - <<'PY'
+import site, pathlib, textwrap
+root = pathlib.Path(site.getsitepackages()[0])
+(root/'enterprise').mkdir(exist_ok=True)
+(root/'enterprise/__init__.py').write_text('# stub')
+(root/'enterprise/enterprise_hooks').mkdir(exist_ok=True)
+(root/'enterprise/enterprise_hooks/__init__.py').write_text('# stub')
+(root/'enterprise/enterprise_hooks/session_handler.py').write_text('''
+class SessionHandler: pass
+class ChatCompletionSession: pass
+class _ENTERPRISE_ResponsesSessionHandler: pass
+''')
+PY
+```
+
+*(`make bootstrap-solai` already does this)*
+
+---
+
+## 🛠  CI template
+
+A ready-made GitHub Action lives at
+`.github/workflows/solai-phase3-hello-world.yml`.
+It installs Foundry, caches it by version, pins SWE-Agent/ReX, and runs the
+red-green demo (Greeter.sol).  Copy it to your repo & tweak the *Phase 3* step
+for your own tests.
+
+---
+
+## 🤝 Contributing & Support
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).  Questions or bug reports → open an
+issue or ping @solosage1 on X.
+
+---
+
+© 2024-2025 SoloSage LLC – MIT License
