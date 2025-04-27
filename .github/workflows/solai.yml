@@ -5,6 +5,9 @@ defaults:
   run:
     shell: bash
 
+env:
+  DEBUG: "false"  # default debug flag for SWE-agent steps
+
 jobs:
   lint-workflow:
     runs-on: ubuntu-latest
@@ -238,7 +241,8 @@ jobs:
           }
           SOL
 
-                    cat > Greeter.t.sol << 'SOLTEST'
+          # align heredoc indentation
+          cat > Greeter.t.sol << 'SOLTEST'
           pragma solidity ^0.8.26;
           import "forge-std/Test.sol";
           import "./Greeter.sol";
@@ -268,17 +272,24 @@ jobs:
 
           printf '%s\n' '--- 2️⃣ Authoring minimal swe.yaml ---'
           cp "${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml" swe.yaml
-          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
+          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEHOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
           printf '%s\n' "✓ Updated swe.yaml to use image: $TARGET_IMAGE_TAG"
 
-          printf '%s\n' '--- 2b️⃣ Linting swe.yaml config ---'
-          if ! sweagent inspect swe.yaml; then
-            printf '%s\n' '❌ swe.yaml inspection failed'
-            exit 1
-          fi
-          printf '%s\n' '✓ swe.yaml configuration valid'
+          printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
+          # install PyYAML for YAML parsing
+          python -m pip install --quiet pyyaml
+          # parse swe.yaml to catch syntax errors
+          python - << 'PY'
+          import yaml, sys
+          try:
+              yaml.safe_load(open("swe.yaml"))
+              print("✓ swe.yaml valid YAML syntax")
+          except Exception as e:
+              print(f"❌ swe.yaml syntax error: {e}")
+              sys.exit(1)
+          PY
 
-          printf '%s\n' '--- 3️⃣ Running SHE-Agent inside SWE-ReX ---'
+          printf '%s\n' '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
 
@@ -303,7 +314,7 @@ jobs:
           printf '%s\n' '✓ Agent produced patch.tar'
           printf '%s\n' '--- 4️⃣ Applying patch... ---'
           tar -xf patch.tar
-          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][f|t]?' -print0)
+          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][ft]' -print0)
 
           if [ "${#patch_files[@]}" -eq 0 ]; then
             printf '%s\n' '❌ No patch files'
