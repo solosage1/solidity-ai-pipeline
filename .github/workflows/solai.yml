@@ -179,9 +179,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Make sure the container ID search uses the dynamically built tag
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
+        shell: bash
         run: |
           set -e
-          echo "--- 1️⃣ Creating isolated failing demo repo ---"
+          printf '--- 1️⃣ Creating isolated failing demo repo ---\\n'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
           git init -q
           
@@ -212,23 +213,35 @@ jobs:
           }
           SOLTEST
 
-          forge test -q && { echo "❌ tests unexpectedly green"; exit 1; } || echo "✓ baseline red"
-          grep -q '"HELLO"' Greeter.t.sol || { echo "❌ 'HELLO' literal missing from test"; exit 1; }
-          echo "✓ Checkpoint 1 Passed"
+          if forge test -q; then
+            printf '❌ tests unexpectedly green\\n'
+            exit 1
+          else
+            printf '✓ baseline red\\n'
+          fi
+
+          if ! grep -q '"HELLO"' Greeter.t.sol; then
+            printf '❌ '"'"'HELLO'"'"' literal missing from test\\n'
+            exit 1
+          fi
+          printf '✓ Checkpoint 1 Passed\\n'
           
-          echo "--- 2️⃣ Authoring minimal swe.yaml ---"
+          printf '--- 2️⃣ Authoring minimal swe.yaml ---\\n'
           # Copy the template
-          cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
+          cp "${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml" swe.yaml
           # Modify the image tag IN PLACE using sed
           sed -i "s|DYNAMIC_IMAGE_TAG_PLACEHOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
-          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG} (keep_container is static)"
+          printf '✓ Updated swe.yaml config file to use image: %s (keep_container is static)\\n' "$TARGET_IMAGE_TAG"
           cat swe.yaml # Optional: verify the change
 
-          echo "--- 2b️⃣ Linting swe.yaml configuration ---"
-          sweagent lint-config swe.yaml || { echo "❌ swe.yaml configuration failed validation"; exit 1; }
-          echo "✓ swe.yaml configuration is valid."
+          printf '--- 2b️⃣ Linting swe.yaml configuration ---\\n'
+          if ! sweagent lint-config swe.yaml; then
+            printf '❌ swe.yaml configuration failed validation\\n'
+            exit 1
+          fi
+          printf '✓ swe.yaml configuration is valid.\\n'
 
-          echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
+          printf '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---\\n'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
           
@@ -239,118 +252,164 @@ jobs:
           set +e # Allow the command to fail so we can capture logs
           # Using sweagent directly (should be in PATH)
           sweagent run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
-          exit_code=$?
+          sweagent_exit_code=$? # Still capture for logging/reporting
           set -e # Re-enable exit on error
 
-          echo "--- 🩺 SWE-Agent Exit Code: $exit_code ---"
+          printf '--- 🩺 SWE-Agent Exit Code: %s ---\\n' "$sweagent_exit_code"
           
           # Attempt to get logs from the container (ALWAYS try after the run)
-          echo "--- 🪵 Attempting to capture Docker container logs --- \t(Exit Code: $exit_code)"
+          # Use printf for formatted output
+          printf '--- 🪵 Attempting to capture Docker container logs --- \\t(SWE-Agent Exit Code: %s)\\n' "$sweagent_exit_code"
           # Extract container name/ID from the log file
-          # Example log line: "INFO     Starting container foundry_sol0.4.4-amd64-abcdef12-3456-7890-abcd-ef0123456789 with image ..."
+          # Ensure grep pattern is correctly escaped and LOGFILE is quoted
           container_name=$(grep -oP 'INFO\\s+Starting container \\K[^\\s]+' "$LOGFILE" | head -n 1)
 
           if [ -n "$container_name" ]; then
-            echo "Found container name/ID from log: $container_name"
+            printf 'Found container name/ID from log: %s\\n' "$container_name"
             # Use the container name/ID to get logs. Use set +e in case container was already removed.
-            set +e 
-            docker logs "$container_name"
-            logs_exit_code=$?
-            set -e
-            if [ $logs_exit_code -ne 0 ]; then
-                echo "(Info: 'docker logs' failed for $container_name, container might have been removed already)"
+            set +e
+            # Try to get logs, check exit status directly
+            if ! docker_logs_output=$(docker logs "$container_name" 2>&1); then
+                # If docker logs fails, print the info message
+                printf '(Info: docker logs failed for %s, container might have been removed already)\n' "$container_name"
+            else
+                # Only print logs if successful
+                printf '%s\n' "$docker_logs_output"
             fi
+            set -e
           else
-            echo "Could not find container name/ID in log file '$LOGFILE' for image ${TARGET_IMAGE_TAG}"
+            printf 'Could not find container name/ID in log file %s for image %s\n' "$LOGFILE" "$TARGET_IMAGE_TAG"
             # Fallback attempt using docker ps (might fail if container is removed)
-            echo "--- 🪵 Fallback: Attempting to capture logs via docker ps --filter --- "
+            printf '--- 🪵 Fallback: Attempting to capture logs via docker ps --filter ---\n'
             container_id_ps=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
              if [ -n "$container_id_ps" ]; then
-                echo "Found container ID via ps: $container_id_ps for image ${TARGET_IMAGE_TAG}"
+                printf 'Found container ID via ps: %s for image %s\n' "$container_id_ps" "$TARGET_IMAGE_TAG"
                 docker logs "$container_id_ps"
              else
-                echo "Could not find container ID via ps for image ${TARGET_IMAGE_TAG}"
+                printf 'Could not find container ID via ps for image %s\n' "$TARGET_IMAGE_TAG"
              fi
           fi
 
           # Fail the step if the original command failed OR if the patch is missing
-          if [ $exit_code -ne 0 ]; then
-            echo "❌ SWE-Agent run failed with exit code $exit_code"
-            exit $exit_code
+          if [ "$sweagent_exit_code" -ne 0 ]; then
+            printf '❌ SWE-Agent run failed with exit code %s\n' "$sweagent_exit_code"
+            exit "$sweagent_exit_code"
           elif [ ! -s patch.tar ]; then
-             echo "❌ patch.tar missing or empty after SWE-Agent run (Exit code: $exit_code)"
+             printf '❌ patch.tar missing or empty after SWE-Agent run (Exit code: %s)\n' "$sweagent_exit_code"
              exit 1 # Fail fast if patch is missing
           fi
 
           # Basic sanity check for patch file (only if sweagent succeeded AND patch exists)
           if [ -s patch.tar ]; then
-            echo "✓ Agent produced patch.tar"
+            printf '✓ Agent produced patch.tar\n'
           fi
-          # REMOVED: Exit 1 from grep check to ensure diagnostic step runs
-          docker ps -a --format '{{.Image}}' | grep -q "${TARGET_IMAGE_TAG}" || echo "⚠️ Warning: Container image ${TARGET_IMAGE_TAG} not found in docker ps -a output at this time."
-          echo "✓ Checkpoint 3 Passed (Using image ${TARGET_IMAGE_TAG})"
 
-          echo "--- 4️⃣ Applying patch, enforcing guard-rails, re-testing ---"
+          # Use explicit if check instead of && ||
+          if ! docker ps -a --format '{{.Image}}' | grep -Fxq "$TARGET_IMAGE_TAG"; then
+             printf '⚠️ Warning: Container image %s not found in docker ps -a output at this time.\n' "$TARGET_IMAGE_TAG"
+          fi
+          printf '✓ Checkpoint 3 Passed (Using image %s)\n' "$TARGET_IMAGE_TAG"
+
+          printf '--- 4️⃣ Applying patch, enforcing guard-rails, re-testing ---\n'
           tar -xf patch.tar
-          patch_files=( *.diff *.patch )
+          # Use find for robust handling of filenames, even with spaces/special chars
+          mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.diff' -print0 -o -name '*.patch' -print0)
+
           if [ "${#patch_files[@]}" -eq 0 ]; then
-             echo "❌ No patch files (*.diff or *.patch) found in patch.tar"; 
-             echo "--- Contents of current directory ---"
+             printf '❌ No patch files (*.diff or *.patch) found in patch.tar\n'
+             printf '--- Contents of current directory ---\n'
              ls -la
-             echo "--- Log file ($LOGFILE) ---"
+             printf '--- Log file (%s) ---\n' "$LOGFILE"
              cat "$LOGFILE"
-             exit 1; 
+             exit 1
           fi
           
           for p in "${patch_files[@]}"; do
-            echo "→ validating $p"
-            # Check file size first (robust against missing file)
-            size=$(stat -c%s "$p" 2>/dev/null || echo 0)
-            [ "$size" -lt 100000 ] || { echo "💥 $p >100 KB (size: $size)"; exit 1; }
+            # Skip empty entries potentially created by mapfile
+            if [ -z "$p" ]; then continue; fi
+
+            printf '→ validating %s\\n' "$p"
+            # Check file size and existence in one go
+            if ! size=$(stat -c%s "$p" 2>/dev/null) || [ -z "$size" ] || [ "$size" -ge 100000 ]; then
+                printf '💥 %s missing or >= 100 KB (size: %s)\\n' "$p" "${size:-unknown}"
+                exit 1
+            fi
             
             # Check LoC and apply
-            git apply --stat "$p" | tee stat.txt
-            loc_inserted=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s}')
-            loc_deleted=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s}')
-            loc_total=$((loc_inserted + loc_deleted)) # Consider total change size
-            [ "$loc_total" -le 2000 ] || { echo "💥 patch changes $loc_total LOC (inserted: $loc_inserted, deleted: $loc_deleted)"; exit 1; }
+            # Ensure stat.txt is cleaned up or uniquely named if run in parallel/loop later
+            if ! git apply --stat "$p" > stat.txt; then
+                printf '❌ Failed to get stats for patch %s\n' "$p"
+                exit 1
+            fi
+
+            loc_inserted=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s+0}') # Ensure numeric output
+            loc_deleted=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s+0}') # Ensure numeric output
+            loc_total=$((loc_inserted + loc_deleted))
+
+            if [ "$loc_total" -gt 2000 ]; then
+               printf '💥 patch changes %s LOC (inserted: %s, deleted: %s)\n' "$loc_total" "$loc_inserted" "$loc_deleted"
+               exit 1
+            fi
             
-            echo "Applying patch $p..."
-            git apply "$p" || { echo "❌ Failed to apply patch $p"; exit 1; }
-            echo "✓ Patch $p applied successfully."
+            printf 'Applying patch %s...\n' "$p"
+            if ! git apply "$p"; then
+               printf '❌ Failed to apply patch %s\n' "$p"
+               exit 1
+            fi
+            printf '✓ Patch %s applied successfully.\n' "$p"
           done
           
-          forge test -q && echo "✓ tests green after patch" || { echo "❌ tests still failing after patch"; exit 1; }
+          if forge test -q; then
+             printf '✓ tests green after patch\n'
+          else
+             printf '❌ tests still failing after patch\n'
+             exit 1
+          fi
           
           # Run Slither
-          echo "Running Slither scan..."
-          slither . --exclude-dependencies --disable-color | tee slither.txt
-          if grep -Eiq 'Severity.*(Critical|High)' slither.txt; then
-            echo "❌ high-severity issue found by Slither"; exit 1; 
-          else
-            echo "✓ Slither OK - No critical/high severity issues found."
+          printf 'Running Slither scan...\n'
+          # Ensure slither.txt is cleaned up or uniquely named if run in parallel/loop later
+          if ! slither . --exclude-dependencies --disable-color > slither.txt; then
+              printf '⚠️ Slither command failed. Output:\n'
+              cat slither.txt # Show output even on failure
+              # Decide if Slither failure should fail the build (currently it does via set -e)
+              # exit 1 # Explicitly exit if needed
           fi
-          echo "✓ Checkpoint 4 Passed"
 
-          echo "--- 5️⃣ Bundling evidence ---"
+          if grep -Eiq 'Severity.*(Critical|High)' slither.txt; then
+            printf '❌ high-severity issue found by Slither\n'
+            cat slither.txt # Show findings
+            exit 1
+          else
+            printf '✓ Slither OK - No critical/high severity issues found.\n'
+          fi
+          printf '✓ Checkpoint 4 Passed\n'
+
+          printf '--- 5️⃣ Bundling evidence ---\n'
           mkdir -p .evidence
+          # Quote file names for mv
           mv patch.tar "$LOGFILE" stat.txt slither.txt .evidence/
           EVIDENCE_BUNDLE="phase3_evidence_${TS}.tgz"
+          HASH_FILE="evidence_${TS}.hash" # Define hash file name
+
           tar -czf "$EVIDENCE_BUNDLE" .evidence
-          sha256sum "$EVIDENCE_BUNDLE" > "evidence_${TS}.hash"
-          echo "✅ Evidence bundle ready: $EVIDENCE_BUNDLE"
+          sha256sum "$EVIDENCE_BUNDLE" > "$HASH_FILE" # Use defined name
+          printf '✅ Evidence bundle ready: %s\n' "$EVIDENCE_BUNDLE"
+
           # Move bundle to /tmp to prevent deletion with demo dir
           mv "$EVIDENCE_BUNDLE" /tmp/
-          echo "✓ Moved $EVIDENCE_BUNDLE to /tmp/"
+          printf '✓ Moved %s to /tmp/\n' "$EVIDENCE_BUNDLE"
+
           # Move hash file too
-          mv "evidence_${TS}.hash" /tmp/
-          echo "✓ Moved evidence_${TS}.hash to /tmp/"
+          mv "$HASH_FILE" /tmp/
+          printf '✓ Moved %s to /tmp/\n' "$HASH_FILE"
+
           # Output bundle name for artifact upload step
-          echo "EVIDENCE_BUNDLE_NAME=$EVIDENCE_BUNDLE" >> $GITHUB_ENV
+          echo "EVIDENCE_BUNDLE_NAME=$EVIDENCE_BUNDLE" >> "$GITHUB_ENV"
           # Output hash file name for artifact upload step
-          echo "EVIDENCE_HASH_NAME=evidence_${TS}.hash" >> $GITHUB_ENV
+          echo "EVIDENCE_HASH_NAME=$HASH_FILE" >> "$GITHUB_ENV" # Use defined name
           
-          echo "--- 6️⃣ Cleanup ---"
+          printf '--- 6️⃣ Cleanup ---\n'
           # Minimal cleanup within the job - runner handles workspace cleanup
           cd .. # Move out of /tmp/demo
           rm -rf demo # Clean up demo dir
