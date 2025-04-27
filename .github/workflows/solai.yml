@@ -1,8 +1,8 @@
-name: solai-phase2
+name: solai-phase3-hello-world
 on: [push]
 
 jobs:
-  smoke:
+  phase3_hello_world:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,7 +36,7 @@ jobs:
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
           python -m pip install --upgrade pip
-          python -m pip install "${wheel}[ai]"
+          python -m pip install "${wheel}[ai]" # Installs sweagent
           python -m pip install pipx
 
       # 4a) Install Slither
@@ -47,100 +47,204 @@ jobs:
       - name: Install Foundry
         run: |
           # 1) Create Foundry directories
-          #    Note: Binaries actually land in $HOME/.config/.foundry/bin with this setup
-          mkdir -p "$HOME/.foundry/bin" 
+          mkdir -p "$HOME/.foundry/bin"
           mkdir -p "$HOME/.config/.foundry/bin"
-
-          # 2) Download foundryup installer directly to the (unused) bin directory
+          # 2) Download foundryup
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
-          
-          # 3) Make it executable
+          # 3) Make executable
           chmod +x "$HOME/.foundry/bin/foundryup"
-
-          # 4) Add the foundryup script's dir to PATH *for this step only* 
+          # 4) Add to temp PATH
           export PATH="$HOME/.foundry/bin:$PATH"
-
-          # 5) Run foundryup to install the full suite
+          # 5) Install full suite
           foundryup || echo "foundryup command failed with exit code $?"
-
-          # 6) Verify binary exists in the expected location
-          echo "--- Verifying forge install location ---"
+          # 6) Verify
           ls -la "$HOME/.config/.foundry/bin/forge"
-          echo "--- End verification ---"
-
-          # 7) Persist the *correct* binary path for future steps
-          echo "Adding $HOME/.config/.foundry/bin to GITHUB_PATH"
+          # 7) Persist correct path
           echo "$HOME/.config/.foundry/bin" >> $GITHUB_PATH
-
-          # 8) Verify the installation using the correct path for this step
+          # 8) Verify again
           export PATH="$HOME/.config/.foundry/bin:$PATH"
-          echo "Current PATH (in step): $PATH"
           which forge
           forge --version
 
-      # 5) Set up Docker so `solai doctor` will see it
+      # 4c) Install SWE-ReX (assuming pip install)
+      - name: Install SWE-ReX
+        run: |
+          python -m pip install swerex-remote
+          which swerex-remote # Verify installation
+
+      # 5) Set up Docker
       - name: Set up QEMU emulation
         uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx (brings in Docker CLI & daemon)
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Debug: PATH after Docker setup
+      # Debug: Post Docker PATH
       - name: Debug - Post Docker PATH
         run: |
           echo "PATH after Docker setup: $PATH"
-          echo "GITHUB_PATH content:"
           cat $GITHUB_PATH
-          echo "Trying to locate forge:"
           which forge || echo "forge not found in PATH"
-          ls -l "${HOME}/.foundry/bin"
 
-      # 6) Verify environment (Remove this step, move doctor call into smoke test)
-      # - name: solai doctor
-      #  run: |
-      #    echo "--- PATH check inside solai doctor step ---"
-      #    echo "PATH=$PATH"
-      #    which forge || echo "forge still not found by which in solai doctor step"
-      #    echo "--- End PATH check ---"
-      #    solai doctor
+      # 6) Build Phase 3 Required Docker Image
+      - name: Build Phase 3 Docker Image
+        run: |
+          echo "--- Building Phase 3 Docker image ---"
+          docker build -t foundry_sol:0.4.4 -f src/solai/docker/foundry_sol.Dockerfile .
+          echo "--- Docker image build finished ---"
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -q '^foundry_sol:0.4.4$' || { echo "❌ Failed to build or tag image correctly"; exit 1; }
+          echo "✓ Image foundry_sol:0.4.4 built successfully."
 
-      # 7) Full end-to-end smoke test
-      - name: Smoke test
+      # 7) Run Phase 3 Hello-World Test
+      - name: Phase 3 - SWE-Agent Run
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Optional: If swerex-remote binary isn't found on default PATH
+          # SWE_REX_BIN: /path/to/swerex-remote 
         run: |
           set -e
-          mkdir smoke && cd smoke
-          git init .
-          echo 'pragma solidity ^0.8.26; contract Y{}' > Y.sol
-          cat > Y.t.sol << 'EOF'
-          pragma solidity ^0.8.26; import "forge-std/Test.sol";
-          contract T is Test {
-            function testFail() public { assertTrue(false); }
+          echo "--- 1️⃣ Creating isolated failing demo repo ---"
+          cd /tmp && rm -rf demo && mkdir demo && cd demo
+          git init -q
+          
+          # Create contract
+          cat > Greeter.sol << 'SOL'
+          pragma solidity ^0.8.26;
+          contract Greeter {
+              string private greeting = "hello";
+              function greet() external view returns (string memory) {
+                  return greeting;
+              }
           }
-          EOF
+          SOL
 
-          # init
-          solai init
+          # Create test
+          cat > Greeter.t.sol << 'SOLTEST'
+          pragma solidity ^0.8.26;
+          import "forge-std/Test.sol";
+          import "./Greeter.sol";
+          
+          contract GreeterTest is Test {
+              Greeter g;
+              function setUp() public { g = new Greeter(); }
+              /// @notice Wrong on purpose
+              function testGreetingFails() public {
+                  assertEq(g.greet(), "HELLO");
+              }
+          }
+          SOLTEST
 
-          # Create top-level Makefile to include the generated .inc
-          echo 'include Makefile.inc' > Makefile
+          forge test -q && { echo "❌ tests unexpectedly green"; exit 1; } || echo "✓ baseline red"
+          grep -q '"HELLO"' Greeter.t.sol || { echo "❌ 'HELLO' literal missing from test"; exit 1; }
+          echo "✓ Checkpoint 1 Passed"
+          
+          echo "--- 2️⃣ Authoring minimal swe.yaml ---"
+          cat > swe.yaml << 'YAML'
+          open_pr: false
+          apply_patch_locally: true
+          
+          problem_statement:
+            repo_path: .
+            text: "Fix failing tests"
+          
+          agent:
+            # model: gpt-4o-2024-05-13 # Using mini for cost-effectiveness
+            # Use gpt-4o-mini for faster/cheaper runs if preferred
+            model: gpt-4o-mini
+            usd_cap: 0.20
+          
+          env:
+            deployment:
+              image: foundry_sol:0.4.4
+          YAML
 
-          # bootstrap
-          make bootstrap-solai
+          # Validate YAML
+          python -c 'import yaml, sys; yaml.safe_load(open("swe.yaml")); print("✓ YAML valid")'
+          # Lint config (assuming sweagent is on PATH from solai[ai] install)
+          sweagent lint-config swe.yaml || { echo "❌ swe.yaml linting failed"; exit 1; }
+          echo "✓ swe.yaml authored and validated"
 
-          # Build the docker image required by solai
-          echo "--- Building solai Docker image ---"
-          docker build -t solai-smoke-test:latest -f ../src/solai/docker/foundry_sol.Dockerfile ..
-          echo "--- Docker image build finished ---"
+          echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
+          TS=$(date +%Y%m%dT%H%M%S)
+          LOGFILE="run_${TS}.log"
+          
+          # Ensure OpenAI key is set
+          [[ -n "${OPENAI_API_KEY-}" ]] || { echo "❌ OPENAI_API_KEY is not set in env"; exit 1; }
 
-          # Update .solai.yaml with the actual image tag used
-          echo "--- Updating .solai.yaml with image tag ---"
-          python -c 'import yaml; from pathlib import Path; cfg_path = Path(".solai.yaml"); data = yaml.safe_load(cfg_path.read_text()); data["env"]["docker_image"] = "solai-smoke-test:latest"; cfg_path.write_text(yaml.safe_dump(data)); print(f"Updated {cfg_path} with image tag: solai-smoke-test:latest")'
-          echo "--- .solai.yaml update finished ---"
+          # Run swerex-remote
+          # Use SWE_REX_BIN env var if defined, otherwise assume swerex-remote is on PATH
+          ${SWE_REX_BIN:-swerex-remote} run --image foundry_sol:0.4.4 \
+            -- sweagent run --config swe.yaml --output-tar patch.tar \
+            2>&1 | tee "$LOGFILE"
+          
+          # Basic sanity check for patch file
+          [ -s patch.tar ] || { echo "❌ patch.tar missing or empty"; exit 1; }
+          echo "✓ Agent produced patch.tar"
+          docker ps -a --format '{{.Image}}' | grep -q 'foundry_sol:0.4.4' || { echo "❌ Expected container image not found"; exit 1; }
+          echo "✓ Checkpoint 3 Passed"
 
-          # Verify environment *after* init, bootstrap, build, and config update
-          echo "--- Running solai doctor after init/bootstrap/build/config-update ---"
-          solai doctor
-          echo "--- solai doctor finished ---"
+          echo "--- 4️⃣ Applying patch, enforcing guard-rails, re-testing ---"
+          tar -xf patch.tar
+          patch_files=( *.diff *.patch )
+          if [ "${#patch_files[@]}" -eq 0 ]; then
+             echo "❌ No patch files (*.diff or *.patch) found in patch.tar"; 
+             echo "--- Contents of current directory ---"
+             ls -la
+             echo "--- Log file ($LOGFILE) ---"
+             cat "$LOGFILE"
+             exit 1; 
+          fi
+          
+          for p in "${patch_files[@]}"; do
+            echo "→ validating $p"
+            # Check file size first (robust against missing file)
+            size=$(stat -c%s "$p" 2>/dev/null || echo 0)
+            [ "$size" -lt 100000 ] || { echo "💥 $p >100 KB (size: $size)"; exit 1; }
+            
+            # Check LoC and apply
+            git apply --stat "$p" | tee stat.txt
+            loc_inserted=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s}')
+            loc_deleted=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s}')
+            loc_total=$((loc_inserted + loc_deleted)) # Consider total change size
+            [ "$loc_total" -le 2000 ] || { echo "💥 patch changes $loc_total LOC (inserted: $loc_inserted, deleted: $loc_deleted)"; exit 1; }
+            
+            echo "Applying patch $p..."
+            git apply "$p" || { echo "❌ Failed to apply patch $p"; exit 1; }
+            echo "✓ Patch $p applied successfully."
+          done
+          
+          forge test -q && echo "✓ tests green after patch" || { echo "❌ tests still failing after patch"; exit 1; }
+          
+          # Run Slither
+          echo "Running Slither scan..."
+          slither . --exclude-dependencies --disable-color | tee slither.txt
+          if grep -Eiq 'Severity.*(Critical|High)' slither.txt; then
+            echo "❌ high-severity issue found by Slither"; exit 1; 
+          else
+            echo "✓ Slither OK - No critical/high severity issues found."
+          fi
+          echo "✓ Checkpoint 4 Passed"
 
-          # run once
-          solai run --once --max-concurrency 1 
+          echo "--- 5️⃣ Bundling evidence ---"
+          mkdir -p .evidence
+          mv patch.tar "$LOGFILE" stat.txt slither.txt .evidence/
+          EVIDENCE_BUNDLE="phase3_evidence_${TS}.tgz"
+          tar -czf "$EVIDENCE_BUNDLE" .evidence
+          sha256sum "$EVIDENCE_BUNDLE" > "evidence_${TS}.hash"
+          echo "✅ Evidence bundle ready: $EVIDENCE_BUNDLE"
+          # Output bundle name for artifact upload step
+          echo "EVIDENCE_BUNDLE_NAME=$EVIDENCE_BUNDLE" >> $GITHUB_ENV
+          
+          echo "--- 6️⃣ Cleanup ---"
+          # Minimal cleanup within the job - runner handles workspace cleanup
+          cd .. # Move out of /tmp/demo
+          rm -rf demo # Clean up demo dir
+          # swerex cleanup is usually handled outside the main flow
+          # ${SWE_REX_BIN:-swerex-remote} clean 
+
+      # 8) Upload Phase 3 Evidence Bundle
+      - name: Upload Phase 3 Evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-evidence
+          path: /tmp/${{ env.EVIDENCE_BUNDLE_NAME }}
+          if-no-files-found: error # Fail the workflow if the bundle isn't found 
