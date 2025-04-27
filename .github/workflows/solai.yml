@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Define FOUNDRY_DIR at job level for use in cache and install steps
-      FOUNDRY_DIR: ${{ env.HOME }}/.config/.foundry
+      FOUNDRY_DIR: /home/runner/.config/.foundry
 
     steps:
       # 1) Grab your code
