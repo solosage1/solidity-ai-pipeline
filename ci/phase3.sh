@@ -46,35 +46,31 @@ fi
 # 2️⃣ Create swe.yaml with spending cap
 cat > swe.yaml << 'YAML'
 problem_statement:
-  text: "Fix failing tests"
+  text: Fix failing tests
 
-# All actions now live directly under "actions"
 actions:
   apply_patch_locally: true
   open_pr: false
 
 agent:
-  # model must be a mapping, not a bare string
   model:
-    name: gpt-4o-mini        # any OpenAI-chat-compatible model id
-  
-  # SWE-agent ≥ 1.0 requires an explicit retry loop (pick the simple score loop)
+    name: gpt-4o-mini
   retry_loop:
     type: score
-    accept_score: 0.6        # stop once a candidate ≥ 0.6
-    cost_limit: 0.20         # USD budget for loop
+    accept_score: 0.6
+    cost_limit: 0.20
     backoff_seconds: 1
-    model:                   # reviewer model
+    model:
       name: gpt-4o-mini
     reviewer_config:
       name: gpt-4o-mini
-      rubric: default        # built-in rubric
+      rubric: default
 
 env:
   repo:
     path: .
   deployment:
-    type: local              # run everything inside the job container
+    type: local
 YAML
 
 echo "✓ Created swe.yaml"

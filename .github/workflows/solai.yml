@@ -65,10 +65,6 @@ jobs:
         env:
           SHELLCHECK_OPTS: -e SC2148
 
-      - name: Install build tool for lint job
-        run: |
-          python -m pip install --quiet build
-
       - name: Build wheel for lint job
         run: python -m build --wheel
 
@@ -96,6 +92,7 @@ jobs:
           # Separate Git and PyPI dependencies
           tmp_git_reqs=$(mktemp)
           tmp_pypi_reqs=$(mktemp)
+          filtered_pypi=$(mktemp)
           grep    '@ git+' requirements.txt > "$tmp_git_reqs"  || true # Allow empty file
           grep -v '@ git+' requirements.txt > "$tmp_pypi_reqs" || true # Allow empty file
 
@@ -107,18 +104,18 @@ jobs:
             echo "No Git dependencies found."
           fi
 
-          # Install PyPI dependencies with hash checking, excluding dev/unsafe tools
+          # Install PyPI dependencies with hash checking
           if [[ -s "$tmp_pypi_reqs" ]]; then
             echo "Installing PyPI dependencies with hash checking..."
             # Filter out dev/unsafe tools that break --require-hashes
-            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" \
-              | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
+            grep -vE '^(pip|setuptools|pip-tools)==' "$tmp_pypi_reqs" > "$filtered_pypi"
+            python -m pip install --quiet --no-cache-dir -r "$filtered_pypi" --require-hashes
           else
             echo "No PyPI dependencies found."
           fi
 
           # Clean up temp files
-          rm "$tmp_git_reqs" "$tmp_pypi_reqs"
+          rm "$tmp_git_reqs" "$tmp_pypi_reqs" "$filtered_pypi"
 
       - name: Check pip dependencies (lint job)
         run: python -m pip check
@@ -156,11 +153,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          # P1: Use different key prefix for phase3 job if needed, or unify?
-          # Keeping separate for now, assuming potentially different transitive deps
-          key: ${{ runner.os }}-pip-phase3-${{ hashFiles('constraints.txt') }}-py3.12
+          # P1: Use requirements.txt for consistency with lint job
+          key: ${{ runner.os }}-pip-phase3-${{ hashFiles('requirements.txt') }}-py3.12
           restore-keys: |
-            ${{ runner.os }}-pip-phase3-${{ hashFiles('constraints.txt') }}-
+            ${{ runner.os }}-pip-phase3-${{ hashFiles('requirements.txt') }}-
             ${{ runner.os }}-pip-phase3-
 
       # 1) Grab your code
@@ -174,10 +170,6 @@ jobs:
       # Export runner's interpreter path for root
       - name: Export PYBIN_DIR
         run: echo "PYBIN_DIR=$(python -c 'import sys, pathlib; print(pathlib.Path(sys.executable).parent)')" >> "$GITHUB_ENV"
-
-      # Upgrade pip once at the beginning
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
 
       # 4) Install your wheel + AI backends via pip
       - name: Restore Cached Wheel # P1: Restore wheel from lint job cache
