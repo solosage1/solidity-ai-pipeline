@@ -74,7 +74,8 @@ jobs:
           cd SWE-agent
           git checkout v1.0.1
           python -m pip install --upgrade pip
-          python -m pip install --editable .
+          # Install sweagent editable, forcing an older litellm version
+          python -m pip install --editable ".[agent]" litellm==1.67.0
           cd ..
           which sweagent || echo "sweagent not found in PATH"
 
@@ -176,9 +177,6 @@ jobs:
 
           # Run swerex-remote
           # Use SWE_REX_BIN env var if defined, otherwise use sweagent directly
-          echo "Running sweagent run --help to check arguments..."
-          sweagent run --help || echo "sweagent run --help failed"
-          echo "Attempting sweagent run..."
           ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output-tar patch.tar \
             2>&1 | tee "$LOGFILE"
           
