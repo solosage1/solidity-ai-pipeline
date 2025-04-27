@@ -178,13 +178,32 @@ jobs:
           echo "--- 🩺 SWE-Agent Exit Code: $exit_code ---"
           
           # Attempt to get logs from the container (ALWAYS try after the run)
-          echo "--- 🪵 Attempting to capture Docker container logs ---"
-          container_id=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
-          if [ -n "$container_id" ]; then
-            echo "Found container ID: $container_id for image ${TARGET_IMAGE_TAG}"
-            docker logs "$container_id"
+          echo "--- 🪵 Attempting to capture Docker container logs --- 	(Exit Code: $exit_code)"
+          # Extract container name/ID from the log file
+          # Example log line: "INFO     Starting container foundry_sol0.4.4-amd64-abcdef12-3456-7890-abcd-ef0123456789 with image ..."
+          container_name=$(grep -oP 'INFO\s+Starting container \K[^\s]+' "$LOGFILE" | head -n 1)
+
+          if [ -n "$container_name" ]; then
+            echo "Found container name/ID from log: $container_name"
+            # Use the container name/ID to get logs. Use set +e in case container was already removed.
+            set +e 
+            docker logs "$container_name"
+            logs_exit_code=$?
+            set -e
+            if [ $logs_exit_code -ne 0 ]; then
+                echo "(Info: 'docker logs' failed for $container_name, container might have been removed already)"
+            fi
           else
-            echo "Could not find container ID for image ${TARGET_IMAGE_TAG}"
+            echo "Could not find container name/ID in log file '$LOGFILE' for image ${TARGET_IMAGE_TAG}"
+            # Fallback attempt using docker ps (might fail if container is removed)
+            echo "--- 🪵 Fallback: Attempting to capture logs via docker ps --filter --- "
+            container_id_ps=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n 1)
+             if [ -n "$container_id_ps" ]; then
+                echo "Found container ID via ps: $container_id_ps for image ${TARGET_IMAGE_TAG}"
+                docker logs "$container_id_ps"
+             else
+                echo "Could not find container ID via ps for image ${TARGET_IMAGE_TAG}"
+             fi
           fi
 
           # Fail the step if the original command failed OR if the patch is missing
