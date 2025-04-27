@@ -116,6 +116,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Make sure the container ID search uses the dynamically built tag
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
+          # ADDED: Flag to prevent swerex from removing the container on exit
+          KEEP_CONTAINER: "1"
         run: |
           set -e
           echo "--- 1️⃣ Creating isolated failing demo repo ---"
@@ -158,7 +160,7 @@ jobs:
           cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
           # Modify the image tag IN PLACE using sed
           # Note: Need to match the indented 'image:' key under env.deployment
-          sed -i "s#^\(\s*image:\s*\).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
+          sed -i "s#^(\s*image:\s*).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
           echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG}"
           cat swe.yaml # Optional: verify the change
 
@@ -171,7 +173,8 @@ jobs:
 
           # Run swerex-remote, capture exit code, and attempt to get logs
           set +e # Allow the command to fail so we can capture logs
-          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
+          # ADDED: --keep-container flag (value from $KEEP_CONTAINER env var)
+          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . --keep-container $KEEP_CONTAINER 2>&1 | tee "$LOGFILE"
           exit_code=$?
           set -e # Re-enable exit on error
 
@@ -285,26 +288,34 @@ jobs:
 
       # ADDED: Diagnostic step from recipe
       - name: Dump last container state
-        if: always() # Always run this step - UPDATED from failure() || success()
+        if: always() # Always run this step
         env:
-          # Make sure we use the same tag as the failed step
+          # Make sure we use the same tag as the build step
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
         run: |
-          echo "--- 🔎 Diagnostic: Dumping last container state for image ${TARGET_IMAGE_TAG} ---"
+          # REPLACED SCRIPT with more robust version
+          echo "⏬ docker ps -a"
           docker ps -a --no-trunc
-          # UPDATED filter to use the dynamic tag directly
-          cid=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format "{{.ID}}" | head -n1)
-          if [ -n "$cid" ]; then
-            echo "Found container ID: $cid"
-            echo "=== docker logs $cid ==="
-            # Use || true in case logs command fails (e.g., container removed quickly)
-            docker logs "$cid" || true 
-            echo "=== docker inspect (State) $cid ==="
-            # Capture ExitCode and Error specifically
-            docker inspect "$cid" --format 'ExitCode: {{.State.ExitCode}}, Error: {{.State.Error}}, Status: {{.State.Status}}' || true
-          else
-            echo "Could not find a container based on image ${TARGET_IMAGE_TAG}"
+          
+          # Pick the most recent container started from our image
+          # Using TARGET_IMAGE_TAG which is correctly set in env above
+          CID=$(docker ps -a --filter "ancestor=${TARGET_IMAGE_TAG}" --format '{{.ID}}' | head -n1)
+          
+          if [ -z "$CID" ]; then
+            echo "❌ Could not find any stopped container for image ${TARGET_IMAGE_TAG}"
+            # Exit 0 here to allow workflow to proceed and potentially fail later 
+            # based on missing artifacts, ensuring we always see this message if needed.
+            exit 0
           fi
+          
+          echo "Found container ID: $CID"
+          echo "⏬ docker inspect $CID | jq '.[0].State'"
+          # Ensure jq is available (should be on standard runners)
+          # If jq fails, the raw inspect output might still be partially useful
+          docker inspect "$CID" | jq '.[0].State' || echo "jq command failed, raw inspect output might be above"
+          
+          echo "⏬ docker logs $CID (last 200 lines)"
+          docker logs --tail 200 "$CID" || true
 
       # 8) Upload Phase 3 Evidence Bundle
       - name: Upload Phase 3 Evidence
