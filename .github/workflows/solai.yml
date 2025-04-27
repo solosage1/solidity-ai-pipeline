@@ -48,26 +48,33 @@ jobs:
       - name: Verify requirements.txt is in sync
         run: |
           set -euo pipefail
-          tmp="$(mktemp)"
+          tmp_compiled="$(mktemp)"
+          tmp_current="$(mktemp)"
+          tmp_compiled_filtered="$(mktemp)"
+          tmp_current_filtered="$(mktemp)"
+
           # Ensure pip-compile runs quietly but exits on error
-          pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp" constraints.txt || {
+          pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp_compiled" constraints.txt || {
             printf "::error::pip-compile failed to generate lock file from constraints.txt\n"
-            rm "$tmp" # Clean up temp file
+            rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered" # Clean up temp files
             exit 1
           }
-          # Compare the generated file with the committed one using unified diff
-          # Filter both files to only include package lines and normalize line endings
+
+          # Filter both files to only include package lines, normalize line endings, and sort
+          grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort > "$tmp_current_filtered"
+          grep -E '^[A-Za-z0-9_.-]+==' "$tmp_compiled" | tr -d '\\' | sort > "$tmp_compiled_filtered"
+
+          # Compare the filtered files using unified diff
           printf "Comparing current requirements.txt with newly compiled version...\n"
-          # Normalize line endings and remove backslashes before comparison
-          diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | tr -d '\\' | sort) \
-                 <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | tr -d '\\' | sort) || {
+          diff -u "$tmp_current_filtered" "$tmp_compiled_filtered" || {
             printf "::error::requirements.txt is out of sync with constraints.txt.\n"
             printf "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes.\n"
-            rm "$tmp" # Clean up temp file
+            rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered" # Clean up temp files
             exit 1
           }
+
           # If diff passes, clean up and confirm
-          rm "$tmp"
+          rm "$tmp_compiled" "$tmp_current" "$tmp_compiled_filtered" "$tmp_current_filtered"
           printf "requirements.txt is up to date.\n"
 
       - name: Run actionlint (GitHub Workflow lint)
