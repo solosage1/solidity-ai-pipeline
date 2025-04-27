@@ -4,8 +4,8 @@ problem_statement:
 agent:
   model:
     name: gpt-4o-mini
-    usd_cap: 0.20
   action_sampler: {}
+  usd_cap: 0.20
 
 env:
   repo:
