@@ -6,10 +6,11 @@ problem_statement:
 # run_config: {} <-- Remove
 
 agent:
-  model:
-    name: gpt-4o-mini
-    cost_limit: 0.20  # Renamed from usd_cap
-  action_sampler: {}
+  # ----- new schema v1.1+ -----
+  model: gpt-4o-mini           # plain string now
+  retry_loop:                  # retry policy required in v1.1
+    max_attempts: 3
+    backoff_seconds: 1
 
 env:
   repo:
@@ -23,6 +24,8 @@ env:
 
 # keep_container: true <-- Remove
 
-actions:
-  open_pr: false
-  apply_patch_locally: true
+# New schema nests actions under agent_configs
+agent_configs:
+  actions:
+    open_pr: false
+    apply_patch_locally: true
