@@ -313,37 +313,75 @@ jobs:
           fi
           printf '%s\n' '✓ Checkpoint 1 Passed'
 
-          printf '%s\n' '--- 2️⃣ Authoring minimal swe.yaml ---'
-          cp "${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml" swe.yaml
-          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEHOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
-          printf '%s\n' "✓ Updated swe.yaml to use image: $TARGET_IMAGE_TAG"
+          printf '%s\n' '--- 2️⃣ Creating minimal valid swe.yaml ---'
+          # Instead of copying directly, we'll create the file with only valid fields
+          cat > swe.yaml << YAML
+          problem_statement:
+            text: "Fix failing tests"
+
+          agent:
+            model:
+              name: gpt-4o-mini
+              per_instance_cost_limit: 0.20  # Correct field name for SWE-Agent v1.0.1
+            action_sampler: {}
+
+          env:
+            repo:
+              path: .
+            deployment:
+              image: ${TARGET_IMAGE_TAG}
+
+          actions:
+            open_pr: false
+            apply_patch_locally: true
+          YAML
+
+          printf '%s\n' "✓ Created swe.yaml with image: $TARGET_IMAGE_TAG"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
-          # parse swe.yaml to catch syntax errors
+          # First check basic YAML syntax
           python - << 'PY'
           import yaml, sys
           try:
               yaml.safe_load(open("swe.yaml"))
               print("✓ swe.yaml valid YAML syntax")
           except Exception as e:
-              # Provide clearer guidance on syntax errors
               print("❌ swe.yaml syntax error detected. Please review the file format and indentation.")
               print(e)
               sys.exit(1)
           PY
-          # Optional YAML debug: only if DEBUG=true
+
+          # Optional YAML debug output
           if [[ "$DEBUG" == "true" ]]; then
             echo "--- swe.yaml content preview ---"
-            sed -n '1,50p' swe.yaml
+            cat swe.yaml
             echo "---------------------------------"
+          fi
+
+          # Do a schema-only check if supported by sweagent CLI
+          if sweagent --help | grep -q -- "--dry-run"; then
+            printf '%s\n' "--- 2c️⃣ Performing schema validation with --dry-run ---"
+            if ! sweagent run --config swe.yaml --dry-run; then
+              printf '%s\n' "❌ Schema validation failed - config structure doesn't match SWE-agent v1.0.1 requirements"
+              exit 1
+            fi
+            printf '%s\n' "✓ Schema validation passed"
+          else
+            printf '%s\n' "--- 2c️⃣ Skipping schema validation (--dry-run not supported) ---"
           fi
 
           printf '%s\n' '--- 3️⃣ Running SWE-Agent inside SWE-ReX ---'
           TS=$(date +%Y%m%dT%H%M%S)
           LOGFILE="run_${TS}.log"
 
+          # Add verbose flag for debugging
+          SWE_AGENT_CMD="sweagent run --config swe.yaml --output_dir ."
+          if [[ "$DEBUG" == "true" ]]; then
+            SWE_AGENT_CMD="$SWE_AGENT_CMD --verbose"
+          fi
+
           set +e
-          sweagent run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
+          eval "$SWE_AGENT_CMD" 2>&1 | tee "$LOGFILE"
           ret=$?
           set -e
 
@@ -356,6 +394,16 @@ jobs:
           fi
 
           if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
+            # If debug mode, we'll print the entire log for diagnostic purposes
+            if [[ "$DEBUG" == "true" ]]; then
+              printf '%s\n' "--- 📝 Full log contents ---"
+              cat "$LOGFILE"
+            else
+              # Always print the key validation sections in case of error
+              printf '%s\n' "--- 📝 Log excerpt (validation sections) ---"
+              grep -A 20 "Configuration from config files" "$LOGFILE" || true
+              grep -A 20 "Validation error" "$LOGFILE" || true
+            fi
             printf '%s\n' '❌ SWE-Agent run failed or patch missing'
             exit 1
           fi
