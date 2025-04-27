@@ -31,12 +31,13 @@ jobs:
         run: python -m build
 
       # 4) Install your wheel + AI backends via pip
-      - name: Install solai wheel (with AI extras)
+      - name: Install solai wheel
         run: |
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
           python -m pip install --upgrade pip
-          python -m pip install "${wheel}[ai]" # Installs sweagent
+          # Don't install [ai] extras since we're installing SWE-agent directly
+          python -m pip install "${wheel}"
           python -m pip install pipx
 
       # 4a) Install Slither
