@@ -156,9 +156,9 @@ jobs:
           echo "--- 2️⃣ Authoring minimal swe.yaml ---"
           # Copy the template
           cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
-          # Modify the image tag IN PLACE using sed (more robust than assuming the value)
-          # Note: Using a different delimiter '#' for sed because tags might contain '/' or other special chars
-          sed -i "s#docker_image:.*#docker_image: ${TARGET_IMAGE_TAG}#" swe.yaml
+          # Modify the image tag IN PLACE using sed
+          # Note: Need to match the indented 'image:' key under env.deployment
+          sed -i "s#^\(\s*image:\s*\).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
           echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG}"
           cat swe.yaml # Optional: verify the change
 
