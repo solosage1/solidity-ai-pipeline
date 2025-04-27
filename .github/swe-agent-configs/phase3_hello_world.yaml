@@ -1,13 +1,14 @@
 problem_statement:
   text: "Fix failing tests"
 
-## Required by SWE-agent v1.0.1+ to avoid KeyError: add minimal config fields
-trajectory_path: .
-run_config: {}
+## Remove invalid top-level fields
+# trajectory_path: . <-- Remove
+# run_config: {} <-- Remove
 
 agent:
   model:
     name: gpt-4o-mini
+    cost_limit: 0.20  # Renamed from usd_cap
   action_sampler: {}
 
 env:
@@ -17,12 +18,10 @@ env:
     # image: foundry_sol:0.4.5-amd64 # Original static tag
     image: DYNAMIC_IMAGE_TAG_PLACEHOLDER # Placeholder for dynamic replacement
 
-budget:               # ⬅︎ hard cost-cap (supported in SA ≥ 1.2.0)
-  usd_cap: 0.20
+# budget: <-- Remove 
+#   usd_cap: 0.20 <-- Remove
 
-# usd_cap: 0.20 # Removed - Invalid field for v1.0.1 
-
-keep_container: true
+# keep_container: true <-- Remove
 
 actions:
   open_pr: false

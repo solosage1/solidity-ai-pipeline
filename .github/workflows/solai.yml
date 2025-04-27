@@ -314,27 +314,27 @@ jobs:
           printf '%s\n' '✓ Checkpoint 1 Passed'
 
           printf '%s\n' '--- 2️⃣ Creating minimal valid swe.yaml ---'
-          cat > swe.yaml << YAML
+          cat > swe.yaml << 'YAML'
           problem_statement:
             text: "Fix failing tests"
 
-            agent:
-              model:
-                name: gpt-4o-mini
-                per_instance_cost_limit: 0.20  # Correct field per SWE-Agent v1.0.1
-              action_sampler: {}
+          agent:
+            model:
+              name: gpt-4o-mini
+              per_instance_cost_limit: 0.20  # Correct field per SWE-Agent v1.0.1
+            action_sampler: {}
 
-            env:
-              repo:
-                path: .
-              deployment:
-                type: local
-                local:
-                  sandbox_dir: .    # write into workspace instead of "/demo"
+          env:
+            repo:
+              path: .
+            deployment:
+              type: local
+              local:
+                sandbox_dir: .    # write into workspace instead of "/demo"
 
-            actions:
-              open_pr: false
-              apply_patch_locally: true
+          actions:
+            open_pr: false
+            apply_patch_locally: true
           YAML
 
           printf '%s\n' "✓ Created swe.yaml for local deployment with sandbox_dir set to workspace"
@@ -389,15 +389,9 @@ jobs:
           printf '%s\n' "--- 🩺 Exit Code: $ret"
 
           printf '%s\n' '--- 🪵 Capturing container logs ---'
-          # Try to find the container ID from the log
           CID=$(grep -oP 'Starting container \\K[^ ]+' "$LOGFILE" | head -n1)
           if [ -n "$CID" ]; then
-            # Always capture logs, especially on failure
             docker logs "$CID" > container.log 2>&1 || true
-            printf '%s\n' "--- 📝 Container log contents (container.log) ---"
-            cat container.log
-          else
-             printf '%s\n' "--- ⚠️ Could not determine container ID to capture logs ---"
           fi
 
           if [ "$ret" -ne 0 ] || [ ! -s patch.tar ]; then
@@ -451,7 +445,7 @@ jobs:
           # Handle potential missing slither.txt gracefully
           [ -f stat.txt ] && mv stat.txt .evidence/
           [ -f slither.txt ] && mv slither.txt .evidence/
-          mv patch.tar "$LOGFILE" .evidence/ 
+          mv patch.tar "$LOGFILE" .evidence/
           TB="phase3_evidence_${TS}.tgz"
           tar -czf "$TB" .evidence
           # Move bundle to /tmp for upload
@@ -464,6 +458,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase3-evidence
-          # Correct path using the step output
           path: /tmp/${{ steps.swe_agent_run_step.outputs.bundle_name }}
           if-no-files-found: error 
