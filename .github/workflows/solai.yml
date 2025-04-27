@@ -9,6 +9,7 @@ env:
   DEBUG: "false"  # default debug flag for SWE-agent steps
   # Cache key prefix for pip dependencies
   PIP_CACHE_PREFIX: pip-lint-test
+  SLITHER_TAG: "latest-slim"  # Centralize Slither version
 
 jobs:
   # quick syntax check of GH workflow
@@ -33,7 +34,7 @@ jobs:
         with:
           path: ~/.cache/pip
           # Key includes Python version, OS, requirements hash, and our prefix
-          key: ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-py3.12-${{ hashFiles('pyproject.toml', 'tests/**.py', 'scripts/setup_stub_pkgs.py') }}
+          key: ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-py3.12-${{ hashFiles('pyproject.toml', 'src/**.py', 'tests/**.py') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-py3.12-
             ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-
@@ -50,15 +51,19 @@ jobs:
         uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: ci
-          severity: error # fail build on any error
         env:
           SHELLCHECK_OPTS: -e SC2148
 
       - name: Install and run tests
         run: |
+          set -e
+          python -m pip install --quiet -e .
           python -m pip install --quiet 'pytest<9' pytest-cov
           echo "--- Running pytest ---"
-          pytest -q --cov=solai --cov-report=term-missing # Run tests with coverage
+          pytest -q --cov=solai --cov-report=term-missing --cov-fail-under=0
+          echo "### Pytest passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          coverage report >> "$GITHUB_STEP_SUMMARY"
 
   phase3_hello_world:
     needs: [lint-workflow, lint-and-test]
@@ -209,7 +214,7 @@ jobs:
       - name: Cache Slither Docker image
         uses: satackey/action-docker-layer-caching@v0.0.11
         with:
-          key: ${{ runner.os }}-slither-latest-slim
+          key: ${{ runner.os }}-slither-${{ env.SLITHER_TAG }}
 
       # 7) Run Phase 3 Hello-World Test
       - name: Phase 3 - SWE-Agent Run

@@ -1,12 +1,12 @@
 # solai – Solidity AI Pipeline
 
-[![CI](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml)
+[![solai-phase3-hello-world](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml)
 
 Experimental framework for running AI agents (like SWE-Agent) against Solidity codebases,
 particularly Foundry projects.
 
 ## CI status
-![phase-3 workflow](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
+![solai-phase3-hello-world](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
 
 ## Run Phase-3 locally
 

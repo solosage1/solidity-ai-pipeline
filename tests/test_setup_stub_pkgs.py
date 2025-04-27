@@ -18,12 +18,15 @@ def import_setup_stub_pkgs():
     return module
 
 
-def test_stub_creation(tmp_path, monkeypatch):
+def test_stub_creation(tmp_path, monkeypatch, request):
     """Verify setup_stub_pkgs.py creates required dirs and is idempotent."""
     # Import the script's functions
     setup_stub_pkgs = import_setup_stub_pkgs()
+    
     # Ensure cleanup of the imported module
-    monkeypatch.addfinalizer(lambda: sys.modules.pop("setup_stub_pkgs", None))
+    def cleanup_module():
+        sys.modules.pop("setup_stub_pkgs", None)
+    request.addfinalizer(cleanup_module)
 
     # Simulate site-packages and sweagent install location
     site_packages_dir = tmp_path / "test_site_packages"
@@ -52,7 +55,10 @@ def test_stub_creation(tmp_path, monkeypatch):
         if name == "sweagent"
         else original_find_spec(name),
     )
-    monkeypatch.addfinalizer(lambda: setattr(ilu, "find_spec", original_find_spec))
+    
+    def cleanup_find_spec():
+        setattr(ilu, "find_spec", original_find_spec)
+    request.addfinalizer(cleanup_find_spec)
 
     # --- First Run ---
     # Run the script's functions directly
@@ -115,5 +121,3 @@ def test_stub_creation(tmp_path, monkeypatch):
     assert "sweagent not found" in str(excinfo.value), (
         "main() did not exit as expected when sweagent is missing"
     )
-
-    # Monkeypatch cleanup happens automatically via addfinalizer
