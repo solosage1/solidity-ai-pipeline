@@ -329,14 +329,16 @@ jobs:
             repo:
               path: .
             deployment:
-              type: local  # Use local deployment instead of Docker
+              type: local
+              local:
+                sandbox_dir: .   # write into workspace instead of "/demo"
 
           actions:
             open_pr: false
             apply_patch_locally: true
           YAML
 
-          printf '%s\n' "✓ Created swe.yaml for local deployment"
+          printf '%s\n' "✓ Created swe.yaml for local deployment with sandbox_dir set to workspace"
 
           printf '%s\n' '--- 2b️⃣ Validating swe.yaml syntax ---'
           # First check basic YAML syntax
