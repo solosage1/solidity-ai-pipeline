@@ -132,7 +132,6 @@ TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
 echo "--- Applying patch file: $p ---"
 git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
 echo "  ✓ Applied successfully"
-done
 
 # Add summary to GitHub Step Summary
 COST_LINE=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || true)
