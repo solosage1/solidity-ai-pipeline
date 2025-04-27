@@ -35,46 +35,41 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          # P1: Unify pip cache key - use constraints.txt hash as proxy
-          key: ${{ runner.os }}-pip-${{ hashFiles('constraints.txt') }}-py3.12
+          # P1: Unify pip cache key - use requirements.txt hash as proxy now
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-py3.12
           restore-keys: |
-            ${{ runner.os }}-pip-${{ hashFiles('constraints.txt') }}-
+            ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-
             ${{ runner.os }}-pip-
 
-      - name: Install pip-tools # Needed for hash generation & verification
-        run: python -m pip install --quiet "pip-tools>=7.4,<7.5" # Install pinned version
-
-      # Ensure we have the constraints file
-      # - name: Checkout repository
-      #   uses: actions/checkout@v4
-      #   with:
-      #     path: .
-
-      # Pre-check: Verify pip-compile resolution consistency BEFORE generating hashes
-      - name: Verify pip-compile Resolution Consistency
+      - name: Install build + lock tools # Updated name and command
         run: |
-          set -e
-          echo "--- Running pip-compile consistency pre-check (filtering comments/via, trimming whitespace, sorting) ---"
-          # Compare sorted, filtered output of normal run vs. dry run
-          diff -q <(pip-compile --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) \
-                  <(pip-compile --quiet --dry-run --no-strip-extras --output-file - constraints.txt | grep -E '^[A-Za-z0-9]' | sed 's/[[:space:]]\+$//' | LC_ALL=C sort) || \
-            (echo "Error: pip-compile resolution inconsistency detected. Outputs differ even after filtering, trimming, and sorting." && exit 1)
-          echo "--- Consistency check passed ---"
+          python -m pip install --quiet "pip<25" "pip-tools>=7.4,<7.5"
 
-      - name: Generate Hashed Constraints # Create hash-pinned file
+      - name: Verify requirements.txt is in sync
         run: |
-          cd "$GITHUB_WORKSPACE"
-          pip-compile \
-            --generate-hashes \
-            --no-strip-extras \
-            -o hashed_constraints.txt constraints.txt
-
-      # P0: Cache the generated hashed constraints file
-      - name: Cache Hashed Constraints
-        uses: actions/cache@v4
-        with:
-          path: hashed_constraints.txt
-          key: ${{ github.sha }}-hashed-constraints
+          set -euo pipefail
+          tmp="$(mktemp)"
+          # Ensure pip-compile runs quietly but exits on error
+          if ! pip-compile --quiet --no-strip-extras --generate-hashes -o "$tmp" constraints.txt; then
+             echo "::error::pip-compile failed to generate lock file from constraints.txt"
+             # Consider showing pip-compile logs here if available/needed
+             rm "$tmp" # Clean up temp file
+             exit 1
+          fi
+          # Compare the generated file with the committed one using unified diff
+          # Filter both files to only include package lines for robust comparison
+          echo "Comparing current requirements.txt with newly compiled version..."
+          if ! diff -u <(grep -E '^[A-Za-z0-9_.-]+==' requirements.txt | sort) \\
+                       <(grep -E '^[A-Za-z0-9_.-]+==' "$tmp" | sort); then
+            echo "::error::requirements.txt is out of sync with constraints.txt."
+            echo "Please run 'pip-compile --no-strip-extras --generate-hashes -o requirements.txt constraints.txt' and commit the changes."
+            # The diff output is already shown by the command above
+            rm "$tmp" # Clean up temp file
+            exit 1
+          fi
+          # If diff passes, clean up and confirm
+          rm "$tmp"
+          echo "requirements.txt is up to date."
 
       - name: Run actionlint (GitHub Workflow lint)
         uses: reviewdog/action-actionlint@v1
@@ -106,14 +101,23 @@ jobs:
           path: dist
           key: ${{ github.sha }}-wheel
 
-      - name: Install wheel and test dependencies from constraints # P0/P1/P2
+      - name: Install wheel and test dependencies # Updated name and command
         run: |
           set -e
-          # Install the built wheel
-          wheel="$(ls dist/solai-*.whl)"
-          python -m pip install --quiet "${wheel}"
-          # Install test dependencies from hashed constraints
-          python -m pip install --quiet -r hashed_constraints.txt --require-hashes
+          # Install the built wheel (assuming it exists from cache/build step)
+          # Use find to robustly get the wheel file path, handle spaces/errors
+          wheel_file=$(find dist -maxdepth 1 -name 'solai-*.whl' -print -quit)
+          if [[ -z "$wheel_file" ]]; then
+            echo "::error::Wheel file not found in dist/ directory."
+            ls -l dist/ # List contents for debugging
+            exit 1
+          fi
+          echo "Installing wheel: ${wheel_file}"
+          python -m pip install --quiet "${wheel_file}"
+
+          # Install test dependencies from the lock file
+          echo "Installing dependencies from requirements.txt"
+          python -m pip install --quiet -r requirements.txt --require-hashes
 
       - name: Check pip dependencies (lint job)
         run: python -m pip check
@@ -173,25 +177,6 @@ jobs:
       # Upgrade pip once at the beginning
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
-
-      # P0/Nit: Remove pip-tools install - not needed when restoring cache
-      # - name: Install pip-tools
-      #   run: python -m pip install --quiet pip-tools
-
-      # P0 Adapt: Restore cached hashed constraints instead of generating
-      - name: Restore Hashed Constraints
-        id: restore-hashed-constraints
-        uses: actions/cache@v4
-        with:
-          path: hashed_constraints.txt
-          key: ${{ github.sha }}-hashed-constraints # Must match the save key
-
-      # Check if restore failed (should not happen if lint job succeeded)
-      - name: Check Hashed Constraints Restore
-        if: steps.restore-hashed-constraints.outputs.cache-hit != 'true'
-        run: |
-          echo "Error: Cached hashed_constraints.txt not found."
-          exit 1
 
       # 4) Install your wheel + AI backends via pip
       - name: Restore Cached Wheel # P1: Restore wheel from lint job cache
@@ -308,12 +293,13 @@ jobs:
             which forge || echo "forge not found in PATH"
           fi
 
-      # 4e) Install SWE-Agent & SWE-ReX using constraints
-      - name: Install SWE-Agent & dependencies via constraints
+      # 4e) Install SWE-Agent & dependencies via requirements file # Updated name and command
+      - name: Install SWE-Agent & dependencies via lock file
         run: |
           set -xeuo pipefail
-          # P1: Install using hashed constraints file for reproducibility & security
-          python -m pip install --quiet --no-cache-dir -r hashed_constraints.txt --require-hashes
+          # P1: Install using lock file for reproducibility & security
+          echo "Installing dependencies from requirements.txt"
+          python -m pip install --quiet --no-cache-dir -r requirements.txt --require-hashes
 
           echo "+++ Creating runtime stubs ..."
           python scripts/setup_stub_pkgs.py
