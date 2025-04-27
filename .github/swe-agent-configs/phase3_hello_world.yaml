@@ -1,0 +1,18 @@
+problem_statement:
+  text: "Fix failing tests"
+
+agent:
+  model:
+    name: gpt-4o-mini
+    usd_cap: 0.20
+  action_sampler: {}
+
+env:
+  repo:
+    path: .
+  deployment:
+    image: foundry_sol:0.4.4
+
+actions:
+  open_pr: false
+  apply_patch_locally: true 
