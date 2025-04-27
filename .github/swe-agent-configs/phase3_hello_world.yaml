@@ -10,10 +10,13 @@ env:
   repo:
     path: .
   deployment:
-    image: foundry_sol:0.4.4
+    # image: foundry_sol:0.4.5-amd64 # Original static tag
+    image: DYNAMIC_IMAGE_TAG_PLACEHOLDER # Placeholder for dynamic replacement
+
+# usd_cap: 0.20 # Removed - Invalid field for v1.0.1 
+
+keep_container: true
 
 actions:
   open_pr: false
   apply_patch_locally: true
-
-# usd_cap: 0.20 # Removed - Invalid field for v1.0.1 

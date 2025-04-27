@@ -4,6 +4,9 @@ on: [push]
 jobs:
   phase3_hello_world:
     runs-on: ubuntu-latest
+    env:
+      # Define FOUNDRY_DIR at job level for use in cache and install steps
+      FOUNDRY_DIR: ${{ runner.home }}/.config/.foundry
 
     steps:
       # 1) Grab your code
@@ -14,6 +17,9 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
+      # Upgrade pip once at the beginning
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
 
       # Debug: Initial PATH state
       - name: Debug - Initial PATH
@@ -25,7 +31,6 @@ jobs:
       # 3) Install build tool + build your wheel
       - name: Install build tooling
         run: |
-          python -m pip install --upgrade pip
           python -m pip install build
       - name: Build wheel
         run: python -m build
@@ -35,21 +40,28 @@ jobs:
         run: |
           wheel=$(ls dist/solai-*.whl)
           echo "Installing wheel: $wheel"
-          python -m pip install --upgrade pip
           # Don't install [ai] extras since we're installing SWE-agent directly
-          python -m pip install "${wheel}"
-          python -m pip install pipx
+          python -m pip install --quiet "${wheel}"
 
       # 4a) Install Slither
       - name: Install Slither
-        run: python -m pip install slither-analyzer
+        run: python -m pip install --quiet slither-analyzer
 
       # 4b) Install Foundry
+      - name: Cache Foundry directory
+        id: cache-foundry
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FOUNDRY_DIR }} # Now correctly references job-level env var
+          key: ${{ runner.os }}-foundry-v0.4.6 # Key includes OS and base tag version
+
       - name: Install Foundry
+        # Only run if cache wasn't restored
+        if: steps.cache-foundry.outputs.cache-hit != 'true'
         run: |
           # 1) Create Foundry directories
-          mkdir -p "$HOME/.foundry/bin"
-          mkdir -p "$HOME/.config/.foundry/bin"
+          mkdir -p "$HOME/.foundry/bin" # Still needed for foundryup download
+          mkdir -p "${FOUNDRY_DIR}/bin"
           # 2) Download foundryup
           curl -L https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/foundryup -o "$HOME/.foundry/bin/foundryup"
           # 3) Make executable
@@ -59,25 +71,24 @@ jobs:
           # 5) Install full suite
           foundryup || echo "foundryup command failed with exit code $?"
           # 6) Verify
-          ls -la "$HOME/.config/.foundry/bin/forge"
+          ls -la "${FOUNDRY_DIR}/bin/forge"
           # 7) Persist correct path
-          echo "$HOME/.config/.foundry/bin" >> $GITHUB_PATH
+          echo "${FOUNDRY_DIR}/bin" >> $GITHUB_PATH
           # 8) Verify again
-          export PATH="$HOME/.config/.foundry/bin:$PATH"
+          export PATH="${FOUNDRY_DIR}/bin:$PATH"
           which forge
           forge --version
 
-      # 4c) Install SWE-ReX (from source)
-      - name: Install SWE-ReX
+      # 4c) Install SWE-Agent & SWE-ReX (from GitHub releases)
+      - name: Install SWE-Agent v1.3.0 and SWE-ReX v1.2.1
         run: |
-          git clone https://github.com/SWE-agent/SWE-agent.git
-          cd SWE-agent
-          git checkout v1.0.1
-          python -m pip install --upgrade pip
-          # Install sweagent editable, forcing an older litellm version
-          python -m pip install --editable ".[agent]" litellm==1.67.0
-          cd ..
-          which sweagent || echo "sweagent not found in PATH"
+          # Install specific versions from GitHub
+          python -m pip install --quiet --no-cache-dir \
+            "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@v1.3.0" \
+            "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@v1.2.1"
+          # Verify installation
+          sweagent --version
+          which sweagent || { echo "sweagent not found in PATH after install"; exit 1; }
 
       # 5) Set up Docker
       - name: Set up QEMU emulation
@@ -97,7 +108,7 @@ jobs:
         id: docker_build # Add an ID to reference the output tag
         run: |
           ARCH=$(dpkg --print-architecture)
-          BASE_TAG="foundry_sol:0.4.5" # Define base tag - UPDATED to 0.4.5
+          BASE_TAG="foundry_sol:0.4.6" # UPDATED base tag to 0.4.6
           ARCH_TAG="${BASE_TAG}-${ARCH}" # Define arch-specific tag
           echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
           # Build with ARCH tag, also tag with BASE tag
@@ -116,8 +127,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Make sure the container ID search uses the dynamically built tag
           TARGET_IMAGE_TAG: ${{ steps.docker_build.outputs.image_tag }}
-          # ADDED: Flag to prevent swerex from removing the container on exit
-          KEEP_CONTAINER: "1"
         run: |
           set -e
           echo "--- 1️⃣ Creating isolated failing demo repo ---"
@@ -159,13 +168,13 @@ jobs:
           # Copy the template
           cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
           # Modify the image tag IN PLACE using sed
-          # Note: Need to match the indented 'image:' key under env.deployment
-          sed -i "s#^\(\s*image:\s*\).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
-          # ADDED: Insert keep_container setting after the image line
-          sed -i "/^\s*image:\s*${TARGET_IMAGE_TAG}/a \
-            keep_container: true" swe.yaml
-          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG} and keep_container: true"
+          sed -i "s|DYNAMIC_IMAGE_TAG_PLACEHOLDER|${TARGET_IMAGE_TAG}|" swe.yaml
+          echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG} (keep_container is static)"
           cat swe.yaml # Optional: verify the change
+
+          echo "--- 2b️⃣ Linting swe.yaml configuration ---"
+          sweagent lint-config swe.yaml || { echo "❌ swe.yaml configuration failed validation"; exit 1; }
+          echo "✓ swe.yaml configuration is valid."
 
           echo "--- 3️⃣ Running SWE-Agent inside SWE-ReX ---"
           TS=$(date +%Y%m%dT%H%M%S)
@@ -176,8 +185,8 @@ jobs:
 
           # Run swerex-remote, capture exit code, and attempt to get logs
           set +e # Allow the command to fail so we can capture logs
-          # REMOVED: --keep-container flag (moved to swe.yaml config)
-          ${SWE_REX_BIN:-sweagent} run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
+          # Using sweagent directly (should be in PATH)
+          sweagent run --config swe.yaml --output_dir . 2>&1 | tee "$LOGFILE"
           exit_code=$?
           set -e # Re-enable exit on error
 
@@ -218,8 +227,7 @@ jobs:
             exit $exit_code
           elif [ ! -s patch.tar ]; then
              echo "❌ patch.tar missing or empty after SWE-Agent run (Exit code: $exit_code)"
-             # Don't exit immediately, run diagnostics first
-             # exit 1 
+             exit 1 # Fail fast if patch is missing
           fi
 
           # Basic sanity check for patch file (only if sweagent succeeded AND patch exists)
@@ -279,8 +287,16 @@ jobs:
           tar -czf "$EVIDENCE_BUNDLE" .evidence
           sha256sum "$EVIDENCE_BUNDLE" > "evidence_${TS}.hash"
           echo "✅ Evidence bundle ready: $EVIDENCE_BUNDLE"
+          # Move bundle to /tmp to prevent deletion with demo dir
+          mv "$EVIDENCE_BUNDLE" /tmp/
+          echo "✓ Moved $EVIDENCE_BUNDLE to /tmp/"
+          # Move hash file too
+          mv "evidence_${TS}.hash" /tmp/
+          echo "✓ Moved evidence_${TS}.hash to /tmp/"
           # Output bundle name for artifact upload step
           echo "EVIDENCE_BUNDLE_NAME=$EVIDENCE_BUNDLE" >> $GITHUB_ENV
+          # Output hash file name for artifact upload step
+          echo "EVIDENCE_HASH_NAME=evidence_${TS}.hash" >> $GITHUB_ENV
           
           echo "--- 6️⃣ Cleanup ---"
           # Minimal cleanup within the job - runner handles workspace cleanup
@@ -325,5 +341,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase3-evidence
-          path: /tmp/${{ env.EVIDENCE_BUNDLE_NAME }}
+          path: |
+            /tmp/${{ env.EVIDENCE_BUNDLE_NAME }}
+            /tmp/${{ env.EVIDENCE_HASH_NAME }}
           if-no-files-found: error # Fail the workflow if the bundle isn't found 
