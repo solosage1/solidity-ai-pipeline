@@ -26,6 +26,14 @@ runs:
         path: dist
         key: ${{ inputs.cache-key }}
 
+    - name: Install build dependencies if cache missed
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Cache miss -> Installing build dependencies"
+        python -m pip install --quiet .
+
     - name: Build wheel if cache missed
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
