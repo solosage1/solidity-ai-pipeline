@@ -1,0 +1,14 @@
+# Placeholder for Phase 4 Orchestrator Workflow
+name: solai-phase4-orchestrator
+
+on:
+  push:
+    branches:
+      - phase-4-orchestrator
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder Step
+        run: echo "Orchestrator workflow coming soon..." 

@@ -7,6 +7,8 @@ defaults:
 
 env:
   DEBUG: "false"  # default debug flag for SWE-agent steps
+  # Cache key prefix for pip dependencies
+  PIP_CACHE_PREFIX: pip-lint-test
 
 jobs:
   lint-workflow:
@@ -24,13 +26,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # → Cache pip install for linters/testers
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          # Key includes Python version, OS, requirements hash, and our prefix
+          key: ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-${{ matrix.python-version }}-
+            ${{ runner.os }}-${{ env.PIP_CACHE_PREFIX }}-
+
       - name: Install and run linters + tests
         run: |
-          python -m pip install --quiet actionlint pytest
+          python -m pip install --quiet actionlint "pytest<9"
           echo "--- Running actionlint ---"
           actionlint -color .github/workflows/solai.yml
           echo "--- Running pytest ---"
-          pytest -q tests/
+          pytest -q # No explicit path, discovers tests automatically
 
   phase3_hello_world:
     needs: [lint-workflow, lint-and-test]

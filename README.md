@@ -1,5 +1,7 @@
 # solai – Solidity AI Pipeline
 
+[![solai-phase3-hello-world](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)](https://github.com/rbgross/solidity-ai-pipeline/actions/workflows/solai.yml)
+
 > **Plug-and-play pipeline to automatically diagnose & fix failing Solidity tests with GPT-4o-mini, Foundry & Slither.**
 
 ---
@@ -64,7 +66,7 @@ solai run --once        # run agent once & exit (CI mode)
 
 ## 📜 Requirements
 
-* **Python 3.12 +** (3.13 works but is still “provisional” for some libs)
+* **Python 3.12 +** (3.13 works but is still "provisional" for some libs)
 * **Foundry >= v1.6.5** – pinned so CI cache never busts
 
   ```bash
