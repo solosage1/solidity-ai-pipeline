@@ -61,9 +61,11 @@ jobs:
           python -m pip install --quiet 'pytest<9' pytest-cov
           echo "--- Running pytest ---"
           pytest -q --cov=solai --cov-report=term-missing --cov-fail-under=0
-          echo "### Pytest passed" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Coverage Report" >> "$GITHUB_STEP_SUMMARY"
-          coverage report >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Pytest passed"
+            echo "### Coverage Report"
+            coverage report
+          } >> "$GITHUB_STEP_SUMMARY"
 
   phase3_hello_world:
     needs: [lint-workflow, lint-and-test]
