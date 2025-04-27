@@ -1,0 +1,5 @@
+openai==1.17.1
+swe-rex==1.2.1
+git+https://github.com/swe-agent/swe-agent@v1.0.1
+pytest<9
+pytest-cov 
