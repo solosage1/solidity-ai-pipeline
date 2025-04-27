@@ -111,7 +111,7 @@ jobs:
 
       # Debug: Post Docker PATH
       - name: Debug - Post Docker PATH
-        if: env.DEBUG == 'true'
+        if: ${{ env.DEBUG == 'true' }}
         run: |
           echo "PATH after Docker setup: $PATH"
           cat "$GITHUB_PATH"
@@ -225,12 +225,9 @@ jobs:
         shell: sudo -E bash {0}
         run: |
           set -e
-          # Ensure root can see
-          #   • Foundry               ($FOUNDRY_DIR/bin)
-          #   • Interpreter scripts   (same dir as `python`, holds sweagent / pip)
-          #   • User-site scripts     ($HOME/.local/bin)
-          PY_BIN_DIR=$(python3 -c 'import os,sys;print(os.path.dirname(sys.executable))')
-          export PATH="$FOUNDRY_DIR/bin:$PY_BIN_DIR:$(python3 -m site --user-base)/bin:$PATH"
+          # Foundry  ▸ user-site scripts ▸ **interpreter bin** ▸ rest of PATH
+          PYBIN_DIR=$(python3 -c 'import sys,os; from pathlib import Path; print(Path(sys.executable).parent)')
+          export PATH="$FOUNDRY_DIR/bin:$(python3 -m site --user-base)/bin:$PYBIN_DIR:$PATH"
 
           printf '%s\n' '--- 1️⃣ Creating isolated failing demo repo ---'
           cd /tmp && rm -rf demo && mkdir demo && cd demo
@@ -268,6 +265,8 @@ jobs:
           else
             printf '%s\n' '✓ baseline red'
           fi
+
+          forge test -q || true   # silence "No tests to run" warning
 
           if ! grep -q '"HELLO"' Greeter.t.sol; then
             printf '%s\n' '❌ HELLO literal missing'
