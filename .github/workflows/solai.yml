@@ -72,12 +72,11 @@ jobs:
         run: |
           git clone https://github.com/SWE-agent/SWE-agent.git
           cd SWE-agent
+          git checkout v1.0.1
           python -m pip install --upgrade pip
           python -m pip install --editable .
           cd ..
           which sweagent || echo "sweagent not found in PATH"
-          # Test if swerex-remote is available
-          python -c "from sweagent.cli import main; print('✓ SWE-ReX installed successfully')" || echo "❌ Failed to import sweagent"
 
       # 5) Set up Docker
       - name: Set up QEMU emulation
