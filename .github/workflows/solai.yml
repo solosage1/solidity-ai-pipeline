@@ -160,7 +160,7 @@ jobs:
           cp ${GITHUB_WORKSPACE}/.github/swe-agent-configs/phase3_hello_world.yaml swe.yaml
           # Modify the image tag IN PLACE using sed
           # Note: Need to match the indented 'image:' key under env.deployment
-          sed -i "s#^(\s*image:\s*).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
+          sed -i "s#^\(\s*image:\s*\).*#\1${TARGET_IMAGE_TAG}#" swe.yaml
           echo "✓ Updated swe.yaml config file to use image: ${TARGET_IMAGE_TAG}"
           cat swe.yaml # Optional: verify the change
 
