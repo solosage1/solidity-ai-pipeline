@@ -115,7 +115,10 @@ jobs:
 
           # Install test dependencies from the lock file
           echo "Installing dependencies from requirements.txt"
-          python -m pip install --quiet -r requirements.txt --require-hashes
+          # First install Git dependencies without hash verification
+          grep '@ git+' requirements.txt | python -m pip install --quiet -r /dev/stdin
+          # Then install PyPI packages with hash verification
+          grep -v '@ git+' requirements.txt | python -m pip install --quiet -r /dev/stdin --require-hashes
 
       - name: Check pip dependencies (lint job)
         run: python -m pip check
@@ -297,7 +300,10 @@ jobs:
           set -xeuo pipefail
           # P1: Install using lock file for reproducibility & security
           echo "Installing dependencies from requirements.txt"
-          python -m pip install --quiet --no-cache-dir -r requirements.txt --require-hashes
+          # First install Git dependencies without hash verification
+          grep '@ git+' requirements.txt | python -m pip install --quiet --no-cache-dir -r /dev/stdin
+          # Then install PyPI packages with hash verification
+          grep -v '@ git+' requirements.txt | python -m pip install --quiet --no-cache-dir -r /dev/stdin --require-hashes
 
           echo "+++ Creating runtime stubs ..."
           python scripts/setup_stub_pkgs.py
