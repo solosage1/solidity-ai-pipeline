@@ -7,8 +7,8 @@ bootstrap-solai:
 	    pipx install --include-deps solai[ai]; \
 	fi
 	# Ensure SWE-Agent & SWE-ReX are present in the same venv
-	pipx inject --force solai \
-	    git+https://github.com/princeton-nlp/SWE-agent.git@main \
+	python -m pip install --quiet --no-cache-dir \
+	    git+https://github.com/SWE-agent/SWE-agent.git@v1.0.1 \
 	    git+https://github.com/SWE-agent/SWE-ReX.git@main
 	solai doctor
 

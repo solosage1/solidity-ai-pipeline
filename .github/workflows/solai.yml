@@ -140,19 +140,37 @@ jobs:
       # 6) Build Phase 3 Required Docker Image
       - name: Build Phase 3 Docker Image
         id: docker_build # Add an ID to reference the output tag
+        shell: bash
         run: |
+          set -e
           ARCH="$(dpkg --print-architecture)"
           BASE_TAG="foundry_sol:0.4.6"
           ARCH_TAG="${BASE_TAG}-${ARCH}"
-          echo "--- Building Phase 3 Docker image for ${ARCH} --- Base Tag: ${BASE_TAG} --- Arch Tag: ${ARCH_TAG} --- Using Dockerfile: src/solai/docker/foundry_sol.Dockerfile ---"
-          # Build with ARCH tag only
-          docker build --platform "linux/${ARCH}" -t "${ARCH_TAG}" --progress=plain \
-                      -f src/solai/docker/foundry_sol.Dockerfile .
-          echo "--- Docker image build finished ---"
-          # Verify arch tag exists
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -Eq "^${ARCH_TAG}$" || { echo "❌ Failed to build or tag image ${ARCH_TAG} correctly"; exit 1; }
-          echo "✓ Image ${ARCH_TAG} built successfully."
-          # Output the ARCH-specific tag for subsequent steps (swe.yaml update, container ID search)
+
+          printf '--- Building Phase 3 Docker image\n'
+          printf '      • arch:        %s\n'  "$ARCH"
+          printf '      • base tag:    %s\n'  "$BASE_TAG"
+          printf '      • final tag:   %s\n'  "$ARCH_TAG"
+          printf '      • dockerfile:  %s\n'  "src/solai/docker/foundry_sol.Dockerfile"
+
+          # Build the image
+          docker build \
+            --platform "linux/${ARCH}" \
+            -t "${ARCH_TAG}" \
+            --progress=plain \
+            -f src/solai/docker/foundry_sol.Dockerfile .
+
+          printf '--- Docker image build finished ---\n'
+
+          # Verify the tag exists
+          if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -Fxq "${ARCH_TAG}"; then
+            printf '❌ Failed to build or tag image %s correctly\n' "$ARCH_TAG"
+            exit 1
+          fi
+
+          printf '✓ Image %s built successfully.\n' "$ARCH_TAG"
+
+          # Expose the tag for later steps
           echo "image_tag=${ARCH_TAG}" >> "$GITHUB_OUTPUT"
 
       # 7) Run Phase 3 Hello-World Test

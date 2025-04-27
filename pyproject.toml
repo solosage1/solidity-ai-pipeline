@@ -35,7 +35,7 @@ solai = "solai.cli:app"
 [project.optional-dependencies]
 ai = [
   # install latest SWE-Agent from GitHub
-  "sweagent @ git+https://github.com/princeton-nlp/SWE-agent.git@main#egg=sweagent",
+  "sweagent @ git+https://github.com/SWE-agent/SWE-agent.git@v1.0.1#egg=sweagent",
   # install latest SWE-ReX from GitHub
   "swe-rex @ git+https://github.com/SWE-agent/SWE-ReX.git@main#egg=swe-rex",
 ]

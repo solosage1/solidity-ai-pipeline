@@ -8,5 +8,8 @@ pip install -U pip
 pip install typer rich pyyaml
 # install solai itself with the [ai] extra (this pulls SWE-Agent & SWE-ReX from GitHub)
 pip install -e ".[ai]"
+python -m pip install --quiet --no-cache-dir \
+    git+https://github.com/SWE-agent/SWE-agent.git@v1.0.1 \
+    git+https://github.com/SWE-agent/SWE-ReX.git@main
 
 deactivate 
