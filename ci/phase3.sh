@@ -48,9 +48,10 @@ actions:
 
 env:
   repo:
-    path: .
+    path: ${DEMO_DIR}
   deployment:
     type: local
+    copy_repo: false
 YAML
 
   echo "✓ Created swe.yaml"
