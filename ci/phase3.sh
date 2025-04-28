@@ -236,7 +236,7 @@ echo "### Phase 3 Summary" >> "$GITHUB_STEP_SUMMARY"
 
 # summary – now that loop is done TOTAL_LOC_INS/DEL are final
 # Use portable grep -E with look-around instead of GNU-specific -P
-COST_LINE=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*Estimated cost: \$([0-9.]+).*/\1/' || true)
+COST_LINE=$(grep -E "Estimated cost: \\$[0-9.]+" "$LOGFILE" | sed -E "s/.*Estimated cost: \\$([0-9.]+).*/\1/" || true)
 {
 echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
 [ -n "$COST_LINE" ] && echo "- Estimated Cost: $${COST_LINE}"
