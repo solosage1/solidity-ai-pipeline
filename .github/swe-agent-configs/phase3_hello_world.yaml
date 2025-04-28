@@ -1,31 +1,19 @@
 problem_statement:
-  text: "Fix failing tests"
-
-## Remove invalid top-level fields
-# trajectory_path: . <-- Remove
-# run_config: {} <-- Remove
+  text: Fix failing tests
 
 agent:
-  # ----- new schema v1.1+ -----
-  model: gpt-4o-mini           # plain string now
-  retry_loop:                  # retry policy required in v1.1
-    max_attempts: 3
-    backoff_seconds: 1
+  model:
+    name: gpt-4o-mini
+
+actions:
+  apply_patch_locally: true
+  open_pr: false
 
 env:
   repo:
     path: .
-  deployment:
-    # image: foundry_sol:0.4.5-amd64 # Original static tag
-    image: DYNAMIC_IMAGE_TAG_PLACEHOLDER # Placeholder for dynamic replacement
 
 # budget: <-- Remove 
 #   usd_cap: 0.20 <-- Remove
 
 # keep_container: true <-- Remove
-
-# New schema nests actions under agent_configs
-agent_configs:
-  actions:
-    open_pr: false
-    apply_patch_locally: true
