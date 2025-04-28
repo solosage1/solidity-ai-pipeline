@@ -48,9 +48,9 @@ actions:
 
 env:
   repo:
-    path: "${DEMO_DIR}"
+    path: "."          # relative path avoids chown race
   deployment:
-    type: local
+    type: local        # default & supported
 YAML
 
   echo "✓ Created swe.yaml"
@@ -126,8 +126,11 @@ TS=$(date +%Y%m%dT%H%M%S)
 LOGFILE="run_${TS}.log"
 PATCH_TAR="${DEMO_DIR}/patch.tar"
 
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config ${SCRIPT_DIR}/swe.yaml --output_dir ${SCRIPT_DIR}"
+# Run from inside the demo repo so that repo.path='.' is correct
+pushd "$DEMO_DIR" >/dev/null
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir ${SCRIPT_DIR}"
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
+popd >/dev/null
 [[ -s "$PATCH_TAR" ]] || { echo "❌ SWE-Agent failed or patch missing"; exit 1; }
 echo "✓ Agent produced $PATCH_TAR"
 
