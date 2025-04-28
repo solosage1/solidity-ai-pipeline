@@ -50,7 +50,7 @@ env:
   repo:
     path: "."          # relative path avoids chown race
   deployment:
-    type: local        # default & supported
+    type: passthrough        # default & supported
 YAML
 
   echo "✓ Created swe.yaml"

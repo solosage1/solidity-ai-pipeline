@@ -1,0 +1,18 @@
+# Minimal RunSingleConfig
+problem_statement:
+  text: Fix failing tests
+
+agent:
+  model:
+    name: gpt-4o-mini
+
+actions:
+  apply_patch_locally: true
+  open_pr: false
+
+env:
+  repo:
+    path: "."          # relative path avoids chown race
+  deployment:
+    type: local        # default & supported
+    copy_repo: false   # prevent unnecessary copy, improve portability
