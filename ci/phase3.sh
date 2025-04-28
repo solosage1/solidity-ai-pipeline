@@ -48,7 +48,7 @@ actions:
 
 env:
   repo:
-    path: ${DEMO_DIR}
+    path: '"${DEMO_DIR}"'
   deployment:
     type: local
     copy_repo: false
@@ -149,8 +149,8 @@ fi
 TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
-# shellcheck disable=SC2064 # we *want* delayed expansion
-trap 'rm -rf "$STATS_DIR"' EXIT
+# shellcheck disable=SC2064
+trap 'rm -rf "\"$STATS_DIR\""' EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
@@ -181,7 +181,7 @@ done
   echo "### Phase 3 Summary"
   echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
   cost=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*\$([0-9.]+).*/\1/' || true)
-  [ -n "$cost" ] && echo "- Estimated Cost: $$cost"
+  [ -n "$cost" ] && echo "- Estimated Cost: $cost"
 } >> "$GITHUB_STEP_SUMMARY"
 
 forge test -q || { echo "❌ tests still failing"; git diff; exit 1; }
