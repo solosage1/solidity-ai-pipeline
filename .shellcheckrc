@@ -8,6 +8,11 @@ severity=error
 exclude=SC2148  # Shebang missing (we have multiple entry points)
 exclude=SC2064  # Trap command expansion (we want delayed expansion)
 exclude=SC2016  # Expressions in single quotes (we handle this case-by-case)
+exclude=SC2250  # Variable brace expansion (style preference)
+exclude=SC2312  # Command masking (info level)
+exclude=SC2154  # Unassigned variables (GitHub Actions env vars)
+exclude=SC2230  # Using which (info level)
+exclude=SC2292  # Prefer [[ ]] over [ ] (style preference)
 
 # Additional settings
 shell=bash
