@@ -128,7 +128,7 @@ PATCH_TAR="${DEMO_DIR}/patch.tar"
 
 # Run from inside the demo repo so that repo.path='.' is correct
 pushd "$DEMO_DIR" >/dev/null
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir ${SCRIPT_DIR}"
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config ${SCRIPT_DIR}/swe.yaml --output_dir ${SCRIPT_DIR}"
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
 popd >/dev/null
 [[ -s "$PATCH_TAR" ]] || { echo "❌ SWE-Agent failed or patch missing"; exit 1; }
@@ -152,7 +152,7 @@ TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
 # shellcheck disable=SC2064
-trap 'rm -rf "$STATS_DIR"' EXIT
+trap "rm -rf '$STATS_DIR'" EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
