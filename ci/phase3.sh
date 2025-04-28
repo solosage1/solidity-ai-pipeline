@@ -208,17 +208,18 @@ for p in "${patch_files[@]}"; do
   # Check LOC changed - store stats per patch file
   STATS_FILE="${STATS_DIR}/$(basename "$p").stats"
 
-  # Capture and process patch stats
-  patch_stats="$(git apply --numstat "$p")"          || { echo "❌ git apply --numstat failed"; exit 1; }
-  
-  # Parse insertions / deletions directly from patch_stats variable
+  # --- capture stats exactly once to avoid SC2094 --------------------
+  patch_stats="$(git apply --numstat "$p")" || {
+      echo "❌ git apply --numstat failed"; exit 1; }
+  printf '%s\n' "$patch_stats" > "$STATS_FILE"
+
+  # Parse insertions / deletions from cached stats
   loc_ins=$(printf '%s\n' "$patch_stats" | awk '$1!="-" {ins+=$1} END{print ins+0}')
   loc_del=$(printf '%s\n' "$patch_stats" | awk '$2!="-" {del+=$2} END{print del+0}')
   total_loc=$((loc_ins + loc_del))
 
   if [ "$total_loc" -gt 2000 ]; then
-    echo "💥 Patch $p changes too many lines ($total_loc LOC)"
-    exit 1
+      echo "💥 Patch $p changes too many lines ($total_loc LOC)"; exit 1
   fi
   echo "  ✓ LOC check passed (+${loc_ins}/-${loc_del} = ${total_loc} total)"
 
