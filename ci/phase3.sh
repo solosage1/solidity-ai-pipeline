@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Helper for command existence checks
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' missing"; exit 1; }
+}
+
 # Phase 3: Hello-World SWE-Agent Run
 # This script is invoked by GitHub Actions via:
 #   sudo --preserve-env=OPENAI_API_KEY,PYBIN_DIR bash ci/phase3.sh
@@ -8,13 +13,8 @@ set -euo pipefail
 # Guard PYBIN_DIR for local runs
 : "${PYBIN_DIR:=$(dirname "$(which python)")}"
 
-# Check for required commands
-for cmd in forge docker; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "❌ Required command '$cmd' not found"
-        exit 1
-    fi
-done
+# Early command check – only tools guaranteed to exist **before** installs
+require_cmd docker
 
 # 1️⃣ Create isolated failing demo repo
 cd /tmp
@@ -47,6 +47,9 @@ contract GreeterTest is Test {
 SOLTEST
 
 # Expect failure – baseline should be red.
+require_cmd forge
+echo "Foundry version: $(forge --version)"
+
 if forge test -q 2>/dev/null; then
   echo "❌ tests unexpectedly green"
   exit 1
@@ -116,7 +119,7 @@ for p in "${patch_files[@]}"; do
   echo "--- Validating patch file: $p ---"
   
   # Check size
-  size=$(stat -c%s "$p")
+  size=$(wc -c < "$p")
   if [ "$size" -ge 100000 ]; then
     echo "💥 Patch file $p is too large ($size bytes)"
     exit 1
@@ -125,8 +128,8 @@ for p in "${patch_files[@]}"; do
 
   # Check LOC changed
   git apply --stat "$p" > stat.txt
-  loc_ins=$(grep -oP '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s+0}')
-  loc_del=$(grep -oP '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s+0}')
+  loc_ins=$(grep -E '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s+0}')
+  loc_del=$(grep -E '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s+0}')
   total_loc=$((loc_ins + loc_del))
   
   if [ "$total_loc" -gt 2000 ]; then
