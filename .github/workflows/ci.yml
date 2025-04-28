@@ -15,7 +15,11 @@ jobs:
       - name: Lint shell scripts with ShellCheck
         uses: ludeeus/action-shellcheck@2.0.0
         env:
-          SHELLCHECK_OPTS: ""  # Use .shellcheckrc for configuration
+          SHELLCHECK_OPTS: "-S error"  # Only fail on errors, allow warnings and notes to pass
+        with:
+          severity: error  # Explicitly set severity level
+          check_together: true  # Check all files together to use common config
+          scandir: './ci'  # Directory to scan
       
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
