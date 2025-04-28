@@ -73,6 +73,9 @@ jobs:
       - name: Check pip dependencies
         run: python -m pip check
 
+      - name: Install test dependencies
+        run: python -m pip install --quiet .[test]
+
       - name: Run tests & Generate Coverage XML # P2: Generate coverage.xml
         run: |
           set -e
