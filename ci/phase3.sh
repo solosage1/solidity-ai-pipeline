@@ -106,7 +106,8 @@ done
 
 # Require forge after PATH injection
 require_cmd forge
-echo "Using forge from: $(command -v forge)"
+forge_bin="$(command -v forge)"
+echo "Using forge from: $forge_bin"
 echo "Foundry version: $(forge --version)"
 
 # 1️⃣ Create isolated failing demo repo
@@ -206,39 +207,39 @@ for p in "${patch_files[@]}"; do
 
   # Check LOC changed - store stats per patch file
   STATS_FILE="${STATS_DIR}/$(basename "$p").stats"
-  # Process patch once and reuse for both stats and application
-  {
-    # First get the stats
-    git apply --numstat "$p" > "$STATS_FILE"
-    # Then read the stats file
-    loc_ins=$(awk '$1!="-" {ins+=$1} END{print ins+0}' "$STATS_FILE")
-    loc_del=$(awk '$2!="-" {del+=$2} END{print del+0}' "$STATS_FILE")
-    total_loc=$((loc_ins + loc_del))
-    
-    if [ "$total_loc" -gt 2000 ]; then
-      echo "💥 Patch $p changes too many lines ($total_loc LOC)"
-      exit 1
-    fi
-    echo "  ✓ LOC check passed (+${loc_ins}/-${loc_del} = ${total_loc} total)"
-    
-    TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
-    TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
 
-    echo "--- Applying patch file: $p ---"
-    git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
-    echo "  ✓ Applied successfully"
-  } < "$p"
+  # Capture and process patch stats
+  patch_stats="$(git apply --numstat "$p")"          || { echo "❌ git apply --numstat failed"; exit 1; }
+  printf '%s\n' "$patch_stats" > "$STATS_FILE"
+
+  # Parse insertions / deletions from cached stats
+  loc_ins=$(printf '%s\n' "$patch_stats" | awk '$1!="-" {ins+=$1} END{print ins+0}')
+  loc_del=$(printf '%s\n' "$patch_stats" | awk '$2!="-" {del+=$2} END{print del+0}')
+  total_loc=$((loc_ins + loc_del))
+
+  if [ "$total_loc" -gt 2000 ]; then
+    echo "💥 Patch $p changes too many lines ($total_loc LOC)"
+    exit 1
+  fi
+  echo "  ✓ LOC check passed (+${loc_ins}/-${loc_del} = ${total_loc} total)"
+
+  TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
+  TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
+
+  echo "--- Applying patch file: $p ---"
+  git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
+  echo "  ✓ Applied successfully"
 done
 
 # Add summary to GitHub Step Summary
-echo '### Phase 3 Summary' >> "$GITHUB_STEP_SUMMARY"
+echo "### Phase 3 Summary" >> "$GITHUB_STEP_SUMMARY"
 
 # summary – now that loop is done TOTAL_LOC_INS/DEL are final
 # Use portable grep -E with look-around instead of GNU-specific -P
 COST_LINE=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*Estimated cost: \$([0-9.]+).*/\1/' || true)
 {
 echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
-[ -n "$COST_LINE" ] && echo "- Estimated Cost: $$COST_LINE"
+[ -n "$COST_LINE" ] && echo "- Estimated Cost: $${COST_LINE}"
 } >> "$GITHUB_STEP_SUMMARY"
 
 forge test -q || { echo "❌ tests still failing after applying patch(es)"; git diff; exit 1; }
@@ -276,4 +277,8 @@ TB="evidence_${TS}.tgz"
 tar -czf "$TB" .evidence
 echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
 
-echo "✅ Phase 3 complete" 
+echo "✅ Phase 3 complete"
+
+# Note for macOS users: For optimal compatibility, install GNU coreutils:
+#   brew install coreutils
+# This ensures consistent behavior of awk, grep, and other utilities. 
