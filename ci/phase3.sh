@@ -104,12 +104,25 @@ env:
   repo:
     path: .
   deployment:
-    # Use passthrough to avoid FS copy issue
-    type: passthrough
+    type: local          # SWE-Agent ≥1.0 accepted literal
+#    # If the API ever regains copy-control, uncomment:
+#    # copy_repo: false
 YAML
 
   echo "✓ Created swe.yaml"
-# NOTE(2025-04-27): 'sweagent validate' deprecated in v1.0 – removed.
+  
+  # Add lightweight validation step
+  echo "--- Validating swe.yaml ---"
+  python - <<'PY'
+from sweagent.config import RunSingleConfig
+import yaml, sys
+try:
+    RunSingleConfig.model_validate(yaml.safe_load(open('swe.yaml')))
+    print("✓ swe.yaml validation passed")
+except Exception as e:
+    print(f"❌ swe.yaml validation failed: {e}", file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 # 3️⃣ Run SWE-Agent via python -m
@@ -153,8 +166,8 @@ for p in "${patch_files[@]}"; do
 
   # Check LOC changed
   git apply --numstat "$p" > stat.txt
-  loc_ins=$(awk '{s+=$1} END{print s+0}' stat.txt)
-  loc_del=$(awk '{s+=$2} END{print s+0}' stat.txt)
+  loc_ins=$(awk '$1!="-" {ins+=$1} END{print ins+0}' stat.txt)
+  loc_del=$(awk '$2!="-" {del+=$2} END{print del+0}' stat.txt)
   total_loc=$((loc_ins + loc_del))
   
   if [ "$total_loc" -gt 2000 ]; then
