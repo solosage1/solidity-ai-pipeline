@@ -16,6 +16,31 @@ require_cmd() {
 # Early command check – only tools guaranteed to exist **before** installs
 require_cmd docker
 
+# ---------------------------------------------------------------------
+# Ensure Foundry (forge) is on PATH even when running under `sudo`
+# ---------------------------------------------------------------------
+#  CI installs Foundry in $HOME/.config/.foundry/bin (runner user).
+#  When the workflow invokes this script via `sudo`, that path is LOST.
+#  We proactively search the typical install dirs and patch $PATH.
+
+FOUND_CANDIDATES=(
+  "${FOUNDRY_DIR:-}"                       # if workflow exported but not preserved
+  "/home/runner/.config/.foundry"          # default GH-runner location
+  "$HOME/.config/.foundry"                 # local fallback
+)
+
+for dir in "${FOUND_CANDIDATES[@]}"; do
+  if [[ -n "$dir" && -x "$dir/bin/forge" ]]; then
+    export PATH="$dir/bin:$PATH"
+    break
+  fi
+done
+
+# Warn if PATH injection failed (but don't exit yet)
+if ! command -v forge >/dev/null 2>&1; then
+    echo "⚠️  forge still not on PATH after search – will fail soon"
+fi
+
 # 1️⃣ Create isolated failing demo repo
 cd /tmp
 rm -rf demo && mkdir demo && cd demo
@@ -127,9 +152,9 @@ for p in "${patch_files[@]}"; do
   echo "  ✓ Size check passed ($size bytes)"
 
   # Check LOC changed
-  git apply --stat "$p" > stat.txt
-  loc_ins=$(grep -E '(\d+)\s+insertions?' stat.txt | awk '{s+=$1} END{print s+0}')
-  loc_del=$(grep -E '(\d+)\s+deletions?' stat.txt | awk '{s+=$1} END{print s+0}')
+  git apply --numstat "$p" > stat.txt
+  loc_ins=$(awk '{s+=$1} END{print s+0}' stat.txt)
+  loc_del=$(awk '{s+=$2} END{print s+0}' stat.txt)
   total_loc=$((loc_ins + loc_del))
   
   if [ "$total_loc" -gt 2000 ]; then
