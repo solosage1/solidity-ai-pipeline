@@ -13,76 +13,18 @@ require_cmd() {
 # Guard PYBIN_DIR for local runs
 : "${PYBIN_DIR:=$(dirname "$(which python)")}"
 
+# Configurable paths
+: "${DEMO_DIR:=/tmp/demo}"  # Can be overridden for concurrent local runs
+: "${FOUNDRY_SEARCH_PATHS:=${FOUNDRY_DIR:-}:/home/runner/.config/.foundry:$HOME/.config/.foundry}"  # Colon-separated list
+
 # Early command check – only tools guaranteed to exist **before** installs
 require_cmd docker
 
-# ---------------------------------------------------------------------
-# Ensure Foundry (forge) is on PATH even when running under `sudo`
-# ---------------------------------------------------------------------
-#  CI installs Foundry in $HOME/.config/.foundry/bin (runner user).
-#  When the workflow invokes this script via `sudo`, that path is LOST.
-#  We proactively search the typical install dirs and patch $PATH.
-
-FOUND_CANDIDATES=(
-  "${FOUNDRY_DIR:-}"                       # if workflow exported but not preserved
-  "/home/runner/.config/.foundry"          # default GH-runner location
-  "$HOME/.config/.foundry"                 # local fallback
-)
-
-for dir in "${FOUND_CANDIDATES[@]}"; do
-  if [[ -n "$dir" && -x "$dir/bin/forge" ]]; then
-    export PATH="$dir/bin:$PATH"
-    break
-  fi
-done
-
-# Warn if PATH injection failed (but don't exit yet)
-if ! command -v forge >/dev/null 2>&1; then
-    echo "⚠️  forge still not on PATH after search – will fail soon"
-fi
-
-# 1️⃣ Create isolated failing demo repo
-cd /tmp
-rm -rf demo && mkdir demo && cd demo
-git init -q
-
-cat > 'Greeter.sol' << 'SOL'
-pragma solidity ^0.8.26;
-contract Greeter {
-    string private greeting = "hello";
-    function greet() external view returns (string memory) {
-        return greeting;
-    }
-}
-SOL
-
-cat > 'Greeter.t.sol' << 'SOLTEST'
-pragma solidity ^0.8.26;
-import "forge-std/Test.sol";
-import "./Greeter.sol";
-
-contract GreeterTest is Test {
-    Greeter g;
-    function setUp() public { g = new Greeter(); }
-    /// @notice Wrong on purpose
-    function testGreetingFails() public {
-        assertEq(g.greet(), "HELLO");
-    }
-}
-SOLTEST
-
-# Expect failure – baseline should be red.
-require_cmd forge
-echo "Foundry version: $(forge --version)"
-
-if forge test -q 2>/dev/null; then
-  echo "❌ tests unexpectedly green"
-  exit 1
-else
-  echo "✓ baseline red"
-fi
-
-# 2️⃣ Create swe.yaml with spending cap
+# 2️⃣ Create swe.yaml with spending cap **and validate it _before_ sudo-only code**
+# ------------------------------------------------------------------
+# This block runs as the original (non-root) user, so the same Python
+# environment that installed `sweagent` can import it without trouble.
+# ------------------------------------------------------------------
 {
   set -euo pipefail
   cat > 'swe.yaml' << 'YAML'
@@ -112,18 +54,87 @@ YAML
   echo "✓ Created swe.yaml"
   
   # Add lightweight validation step
-  echo "--- Validating swe.yaml ---"
+  echo "--- Validating swe.yaml (non-sudo python) ---"
   "$PYBIN_DIR/python" - <<'PY'
-from sweagent.config import RunSingleConfig
+from importlib import import_module
 import yaml, sys
 try:
+    RunSingleConfig = import_module("sweagent.config").RunSingleConfig
     RunSingleConfig.model_validate(yaml.safe_load(open('swe.yaml')))
     print("✓ swe.yaml validation passed")
+except ModuleNotFoundError as e:
+    # Continue gracefully – the main SWE-Agent run will still fail loudly
+    # if the package is truly absent; this keeps local runs ergonomic.
+    print(f'⚠️  swe.yaml validation skipped ({e})')
+    print('   → Hint: Run `make bootstrap-solai` to install SWE-Agent and its dependencies')
 except Exception as e:
     print(f"❌ swe.yaml validation failed: {e}", file=sys.stderr)
     sys.exit(1)
 PY
 }
+
+# ────────────────────────────────────────────────────────────────
+# Everything below may run under sudo / root; validation is done.
+# ────────────────────────────────────────────────────────────────
+
+# ---------------------------------------------------------------------
+# Ensure Foundry (forge) is on PATH even when running under `sudo`
+# ---------------------------------------------------------------------
+#  CI installs Foundry in $HOME/.config/.foundry/bin (runner user).
+#  When the workflow invokes this script via `sudo`, that path is LOST.
+#  We proactively search the typical install dirs and patch $PATH.
+
+IFS=':' read -ra FOUND_CANDIDATES <<< "$FOUNDRY_SEARCH_PATHS"
+
+for dir in "${FOUND_CANDIDATES[@]}"; do
+  if [[ -n "$dir" && -x "$dir/bin/forge" ]]; then
+    export PATH="$dir/bin:$PATH"
+    echo "✓ Found forge in: $dir/bin"
+    break
+  fi
+done
+
+# Require forge after PATH injection
+require_cmd forge
+echo "Using forge from: $(command -v forge)"
+echo "Foundry version: $(forge --version)"
+
+# 1️⃣ Create isolated failing demo repo
+rm -rf "$DEMO_DIR" && mkdir -p "$DEMO_DIR" && cd "$DEMO_DIR"
+git init -q
+
+cat > 'Greeter.sol' << 'SOL'
+pragma solidity ^0.8.26;
+contract Greeter {
+    string private greeting = "hello";
+    function greet() external view returns (string memory) {
+        return greeting;
+    }
+}
+SOL
+
+cat > 'Greeter.t.sol' << 'SOLTEST'
+pragma solidity ^0.8.26;
+import "forge-std/Test.sol";
+import "./Greeter.sol";
+
+contract GreeterTest is Test {
+    Greeter g;
+    function setUp() public { g = new Greeter(); }
+    /// @notice Wrong on purpose
+    function testGreetingFails() public {
+        assertEq(g.greet(), "HELLO");
+    }
+}
+SOLTEST
+
+# Expect failure – baseline should be red.
+if forge test -q 2>/dev/null; then
+  echo "❌ tests unexpectedly green"
+  exit 1
+else
+  echo "✓ baseline red"
+fi
 
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)
@@ -142,7 +153,16 @@ echo "✓ Agent produced patch.tar"
 tar -xf patch.tar
 
 # Use mapfile to handle multiple patch files if necessary
-mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][ft]' -print0)
+if command -v mapfile >/dev/null 2>&1; then
+  # Modern bash with mapfile
+  mapfile -d $'\0' patch_files < <(find . -maxdepth 1 -name '*.[pd][ia][ft]' -print0)
+else
+  # Fallback for systems without mapfile (e.g. macOS)
+  patch_files=()
+  while IFS= read -r -d '' f; do
+    patch_files+=("$f")
+  done < <(find . -maxdepth 1 -name '*.[pd][ia][ft]' -print0)
+fi
 
 if [ "${#patch_files[@]}" -eq 0 ]; then
   echo "❌ No patch files found in patch.tar"
