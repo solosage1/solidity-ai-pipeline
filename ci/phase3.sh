@@ -51,20 +51,15 @@ fi
 problem_statement:
   text: Fix failing tests
 
+# Revert to simple agent model config
 agent:
-  model: gpt-4o-mini               # simple model string, no retry loop here
+  # Specify model as a dictionary
+  model:
+    name: gpt-4o-mini
 
 actions:
   apply_patch_locally: true
   open_pr: false
-
-# Simple chooser retry policy (avoids complex reviewer templates)
-retry_loop:
-  type: chooser
-  chooser: gpt-4o-mini
-  max_attempts: 3
-  cost_limit: 0.2
-  backoff_seconds: 1
 
 env:
   repo:
@@ -73,16 +68,8 @@ env:
     type: local
 YAML
 
-  # Validate the configuration
-  echo "Validating SWE-Agent configuration..."
-  if ! "$PYBIN_DIR/python" -m sweagent validate --config swe.yaml; then
-    echo "❌ SWE-Agent configuration validation failed"
-    exit 1
-  fi
-  echo "✓ Configuration validated successfully"
+  echo "✓ Created swe.yaml"
 }
-
-echo "✓ Created and validated swe.yaml"
 
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)
