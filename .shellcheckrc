@@ -1,0 +1,14 @@
+# ShellCheck configuration for solidity-ai-pipeline
+# See https://github.com/koalaman/shellcheck/wiki/Directive
+
+# Only fail on errors, allow warnings and notes to pass
+severity=error
+
+# Exclude specific rules that we've reviewed and accepted
+exclude=SC2148  # Shebang missing (we have multiple entry points)
+exclude=SC2064  # Trap command expansion (we want delayed expansion)
+exclude=SC2016  # Expressions in single quotes (we handle this case-by-case)
+
+# Additional settings
+shell=bash
+enable=all 

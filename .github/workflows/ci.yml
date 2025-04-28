@@ -15,7 +15,7 @@ jobs:
       - name: Lint shell scripts with ShellCheck
         uses: ludeeus/action-shellcheck@2.0.0
         env:
-          SHELLCHECK_OPTS: "-Se -e SC2148"  # fail only on 'error'; keep SC2148 ignore
+          SHELLCHECK_OPTS: ""  # Use .shellcheckrc for configuration
       
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
