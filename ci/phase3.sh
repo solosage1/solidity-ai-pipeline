@@ -33,7 +33,7 @@ require_cmd docker   # only binary guaranteed before installs
 
 {
   set -euo pipefail
-  cat > swe.yaml <<'YAML'
+  cat > swe.yaml <<YAML
 # Minimal RunSingleConfig
 problem_statement:
   text: Fix failing tests
@@ -48,7 +48,7 @@ actions:
 
 env:
   repo:
-    path: '"${DEMO_DIR}"'
+    path: "${DEMO_DIR}"
   deployment:
     type: local
     copy_repo: false
@@ -150,7 +150,7 @@ TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
 # shellcheck disable=SC2064
-trap 'rm -rf "\"$STATS_DIR\""' EXIT
+trap 'rm -rf "$STATS_DIR"' EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
@@ -200,7 +200,7 @@ echo "✓ Slither analysis complete"
 # ---------- evidence bundle --------------------------------------------------
 
 mkdir -p .evidence
-mv "$STATS_DIR"/* .evidence/ 2>/dev/null || true
+cp "$STATS_DIR"/* .evidence/ 2>/dev/null || true
 mv "$PATCH_TAR" "$LOGFILE" slither.txt .evidence/
 
 {
