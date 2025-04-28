@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Phase 3: Hello-World SWE-Agent Run
+# This script is invoked by GitHub Actions via:
+#   sudo --preserve-env=OPENAI_API_KEY,PYBIN_DIR bash ci/phase3.sh
+#
+# Environment Variables:
+#   PYBIN_DIR: Path to Python binary directory (defaults to dirname of which python)
+#   DEMO_DIR: Directory for the demo repository (defaults to /tmp/demo)
+#   FOUNDRY_DIR: Optional path to Foundry installation
+#   FOUNDRY_SEARCH_PATHS: Colon-separated list of paths to search for Foundry
+#   OPENAI_API_KEY: Required for SWE-Agent operation
+
 # Helper for command existence checks
 require_cmd() {
     command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' missing"; exit 1; }
 }
 
-# Phase 3: Hello-World SWE-Agent Run
-# This script is invoked by GitHub Actions via:
-#   sudo --preserve-env=OPENAI_API_KEY,PYBIN_DIR bash ci/phase3.sh
-
 # Guard PYBIN_DIR for local runs
 : "${PYBIN_DIR:=$(dirname "$(which python)")}"
 
 # Configurable paths
-: "${DEMO_DIR:=/tmp/demo}"  # Can be overridden for concurrent local runs
-: "${FOUNDRY_SEARCH_PATHS:=${FOUNDRY_DIR:-}:/home/runner/.config/.foundry:$HOME/.config/.foundry}"  # Colon-separated list
+# Absolute path to repo root *before* we cd into the demo folder
+SCRIPT_DIR="$(pwd)"
+: "${DEMO_DIR:=/tmp/demo}"          # Can be overridden for concurrent local runs
+# Colon-separated list
+: "${FOUNDRY_SEARCH_PATHS:=${FOUNDRY_DIR:-}:/home/runner/.config/.foundry:$HOME/.config/.foundry}"
 
 # Early command check – only tools guaranteed to exist **before** installs
 require_cmd docker
@@ -139,18 +149,21 @@ fi
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)
 LOGFILE="run_${TS}.log"
+PATCH_TAR="${DEMO_DIR}/patch.tar"
+
 # SWE-Agent ≥1.0 reads env.repo.path from swe.yaml; --repo_path was removed.
-# Keep the command minimal and version-agnostic.
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir ."
+# We still want logs & patch artefacts back in the repo root (${SCRIPT_DIR})
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config ${SCRIPT_DIR}/swe.yaml --output_dir ${SCRIPT_DIR}"
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
 ret=$?
-if [ $ret -ne 0 ] || [ ! -s patch.tar ]; then
-  echo "❌ SWE-Agent run failed or patch.tar missing"; exit 1
+if [ $ret -ne 0 ] || [ ! -s "${PATCH_TAR}" ]; then
+  echo "❌ SWE-Agent run failed or ${PATCH_TAR} missing"; exit 1
 fi
-echo "✓ Agent produced patch.tar"
+echo "✓ Agent produced ${PATCH_TAR}"
 
 # 4️⃣ Apply patch & guard-rails
-tar -xf patch.tar
+cd "${SCRIPT_DIR}"
+tar -xf "${PATCH_TAR}"
 
 # Use mapfile to handle multiple patch files if necessary
 if command -v mapfile >/dev/null 2>&1; then
@@ -165,12 +178,19 @@ else
 fi
 
 if [ "${#patch_files[@]}" -eq 0 ]; then
-  echo "❌ No patch files found in patch.tar"
+  echo "❌ No patch files found in ${PATCH_TAR}"
   exit 1
 fi
 
 TOTAL_LOC_INS=0
 TOTAL_LOC_DEL=0
+
+# Create a temporary directory for patch stats
+STATS_DIR=".patch_stats"
+mkdir -p "$STATS_DIR"
+
+# Ensure cleanup happens even on script failure
+trap 'rm -rf "$STATS_DIR"' EXIT
 
 for p in "${patch_files[@]}"; do
   [ -z "$p" ] && continue # Skip empty entries if any
@@ -184,31 +204,36 @@ for p in "${patch_files[@]}"; do
   fi
   echo "  ✓ Size check passed ($size bytes)"
 
-  # Check LOC changed
-  git apply --numstat "$p" > stat.txt
-  loc_ins=$(awk '$1!="-" {ins+=$1} END{print ins+0}' stat.txt)
-  loc_del=$(awk '$2!="-" {del+=$2} END{print del+0}' stat.txt)
-  total_loc=$((loc_ins + loc_del))
-  
-  if [ "$total_loc" -gt 2000 ]; then
-    echo "💥 Patch $p changes too many lines ($total_loc LOC)"
-    exit 1
-  fi
-  echo "  ✓ LOC check passed (+${loc_ins}/-${loc_del} = ${total_loc} total)"
-  
-  TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
-  TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
+  # Check LOC changed - store stats per patch file
+  STATS_FILE="${STATS_DIR}/$(basename "$p").stats"
+  # Process patch once and reuse for both stats and application
+  {
+    git apply --numstat "$p" > "$STATS_FILE"
+    loc_ins=$(awk '$1!="-" {ins+=$1} END{print ins+0}' "$STATS_FILE")
+    loc_del=$(awk '$2!="-" {del+=$2} END{print del+0}' "$STATS_FILE")
+    total_loc=$((loc_ins + loc_del))
+    
+    if [ "$total_loc" -gt 2000 ]; then
+      echo "💥 Patch $p changes too many lines ($total_loc LOC)"
+      exit 1
+    fi
+    echo "  ✓ LOC check passed (+${loc_ins}/-${loc_del} = ${total_loc} total)"
+    
+    TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
+    TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
 
-  echo "--- Applying patch file: $p ---"
-  git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
-  echo "  ✓ Applied successfully"
+    echo "--- Applying patch file: $p ---"
+    git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
+    echo "  ✓ Applied successfully"
+  } < "$p"
 done
 
 # Add summary to GitHub Step Summary
 echo '### Phase 3 Summary' >> "$GITHUB_STEP_SUMMARY"
 
 # summary – now that loop is done TOTAL_LOC_INS/DEL are final
-COST_LINE=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || true)
+# Use portable grep -E with look-around instead of GNU-specific -P
+COST_LINE=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*Estimated cost: \$([0-9.]+).*/\1/' || true)
 {
 echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
 [ -n "$COST_LINE" ] && echo "- Estimated Cost: $$COST_LINE"
@@ -231,8 +256,20 @@ echo "✓ Slither analysis complete"
 
 # 6️⃣ Bundle evidence
 mkdir -p .evidence
-[ -f stat.txt ] && mv stat.txt .evidence/
-mv patch.tar "$LOGFILE" slither.txt .evidence/
+# Move all patch stats files
+mv "$STATS_DIR"/* .evidence/ 2>/dev/null || true
+# Move artefacts with absolute paths
+mv "${PATCH_TAR}" "$LOGFILE" slither.txt .evidence/
+
+# Create evidence manifest
+{
+  echo "Evidence Bundle Contents:"
+  echo "------------------------"
+  find .evidence -type f | sort
+  echo "------------------------"
+  echo "Total files: $(find .evidence -type f | wc -l)"
+} > .evidence/manifest.txt
+
 TB="evidence_${TS}.tgz"
 tar -czf "$TB" .evidence
 echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
