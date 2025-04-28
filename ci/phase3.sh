@@ -50,7 +50,7 @@ env:
   repo:
     path: "${DEMO_DIR}"
   deployment:
-    type: passthrough
+    type: local
 YAML
 
   echo "✓ Created swe.yaml"

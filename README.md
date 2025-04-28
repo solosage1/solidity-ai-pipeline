@@ -5,6 +5,23 @@
 Experimental framework for running AI agents (like SWE-Agent) against Solidity codebases,
 particularly Foundry projects.
 
+## 🎯 Project Phases
+
+### Phase 1: Foundation (v0.4.0)
+**ELI5**: Think of Phase 1 as building the basic toolbox. We created the essential tools needed to start working with smart contracts and AI, like setting up the basic structure and making sure everything can talk to each other.
+
+[Read Phase 1 Summary](specs/phase1_summary.md)
+
+### Phase 2: Integration (v0.4.2)
+**ELI5**: In Phase 2, we made the toolbox smarter. We added better ways to test contracts and made it easier for the AI to understand and fix problems. It's like upgrading from a basic toolbox to one with power tools.
+
+[Read Phase 2 Summary](specs/phase2_summary.md)
+
+### Phase 3: Hardening (v0.4.4)
+**ELI5**: Phase 3 is all about making everything more reliable and secure. We added safety checks, better testing, and made sure everything works smoothly together. It's like adding safety features and quality control to our toolbox.
+
+[Read Phase 3 Summary](specs/phase3_summary.md)
+
 ## CI status
 ![solai-phase3-hello-world](https://github.com/solosage1/solidity-ai-pipeline/actions/workflows/solai.yml/badge.svg)
 
