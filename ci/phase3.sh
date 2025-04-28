@@ -5,6 +5,9 @@ set -euo pipefail
 # This script is invoked by GitHub Actions via:
 #   sudo --preserve-env=OPENAI_API_KEY,PYBIN_DIR bash ci/phase3.sh
 
+# Guard PYBIN_DIR for local runs
+: "${PYBIN_DIR:=$(dirname "$(which python)")}"
+
 # 1️⃣ Create isolated failing demo repo
 cd /tmp
 rm -rf demo && mkdir demo && cd demo
@@ -65,16 +68,19 @@ env:
   repo:
     path: .
   deployment:
-    type: local
+    # Use passthrough to avoid FS copy issue
+    type: passthrough
 YAML
 
   echo "✓ Created swe.yaml"
+# NOTE(2025-04-27): 'sweagent validate' deprecated in v1.0 – removed.
 }
 
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)
 LOGFILE="run_${TS}.log"
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir ."
+# Add --repo_path when using passthrough deployment
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir . --repo_path \"$PWD\""
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
 ret=$?
 if [ $ret -ne 0 ] || [ ! -s patch.tar ]; then
@@ -130,15 +136,9 @@ done
 
 # Add summary to GitHub Step Summary
 echo '### Phase 3 Summary' >> "$GITHUB_STEP_SUMMARY"
-TOTAL_LOC_INS=$((TOTAL_LOC_INS + loc_ins))
-TOTAL_LOC_DEL=$((TOTAL_LOC_DEL + loc_del))
 
-echo "--- Applying patch file: $p ---"
-git apply "$p" || { echo "❌ Applying patch $p failed"; git diff; exit 1; }
-echo "  ✓ Applied successfully"
-
-# Add summary to GitHub Step Summary
-COST_LINE=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || true)
+# summary – now that loop is done TOTAL_LOC_INS/DEL are final
+COST_LINE=$(grep -oP 'Estimated cost: \\$\\K[0-9.]+' "$LOGFILE" || true)
 {
 echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
 [ -n "$COST_LINE" ] && echo "- Estimated Cost: $$COST_LINE"
@@ -166,10 +166,5 @@ mv patch.tar "$LOGFILE" slither.txt .evidence/
 TB="evidence_${TS}.tgz"
 tar -czf "$TB" .evidence
 echo "bundle_name=$TB" >> "$GITHUB_OUTPUT"
-
-# Extract cost for summary
-# COST is now handled inline above when writing to GITHUB_STEP_SUMMARY
-# COST=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || echo "N/A")
-# echo "- **Estimated Cost:** $$COST" >> "$GITHUB_STEP_SUMMARY"
 
 echo "✅ Phase 3 complete" 
