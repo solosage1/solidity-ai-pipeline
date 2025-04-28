@@ -8,6 +8,14 @@ set -euo pipefail
 # Guard PYBIN_DIR for local runs
 : "${PYBIN_DIR:=$(dirname "$(which python)")}"
 
+# Check for required commands
+for cmd in forge docker; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "❌ Required command '$cmd' not found"
+        exit 1
+    fi
+done
+
 # 1️⃣ Create isolated failing demo repo
 cd /tmp
 rm -rf demo && mkdir demo && cd demo
@@ -79,8 +87,9 @@ YAML
 # 3️⃣ Run SWE-Agent via python -m
 TS=$(date +%Y%m%dT%H%M%S)
 LOGFILE="run_${TS}.log"
-# Add --repo_path when using passthrough deployment
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir . --repo_path \"$PWD\""
+# SWE-Agent ≥1.0 reads env.repo.path from swe.yaml; --repo_path was removed.
+# Keep the command minimal and version-agnostic.
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config swe.yaml --output_dir ."
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
 ret=$?
 if [ $ret -ne 0 ] || [ ! -s patch.tar ]; then
@@ -138,7 +147,7 @@ done
 echo '### Phase 3 Summary' >> "$GITHUB_STEP_SUMMARY"
 
 # summary – now that loop is done TOTAL_LOC_INS/DEL are final
-COST_LINE=$(grep -oP 'Estimated cost: \\$\\K[0-9.]+' "$LOGFILE" || true)
+COST_LINE=$(grep -oP 'Estimated cost: \$\K[0-9.]+' "$LOGFILE" || true)
 {
 echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
 [ -n "$COST_LINE" ] && echo "- Estimated Cost: $$COST_LINE"
@@ -149,7 +158,7 @@ echo "✓ tests green after patch"
 
 # Cache Slither image if not already
 SLITHER_IMG="ghcr.io/crytic/slither:latest-slim"
-docker pull "$SLITHER_IMG" || true
+docker pull --quiet "$SLITHER_IMG" || true
 
 # 5️⃣ Run Slither inside container
 echo "--- Running Slither ---"
