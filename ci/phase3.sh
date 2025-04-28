@@ -113,7 +113,7 @@ YAML
   
   # Add lightweight validation step
   echo "--- Validating swe.yaml ---"
-  python - <<'PY'
+  "$PYBIN_DIR/python" - <<'PY'
 from sweagent.config import RunSingleConfig
 import yaml, sys
 try:
