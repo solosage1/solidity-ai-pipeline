@@ -208,7 +208,9 @@ for p in "${patch_files[@]}"; do
   STATS_FILE="${STATS_DIR}/$(basename "$p").stats"
   # Process patch once and reuse for both stats and application
   {
+    # First get the stats
     git apply --numstat "$p" > "$STATS_FILE"
+    # Then read the stats file
     loc_ins=$(awk '$1!="-" {ins+=$1} END{print ins+0}' "$STATS_FILE")
     loc_del=$(awk '$2!="-" {del+=$2} END{print del+0}' "$STATS_FILE")
     total_loc=$((loc_ins + loc_del))
