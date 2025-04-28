@@ -148,7 +148,7 @@ fi
 TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
-trap 'rm -rf "$STATS_DIR"' EXIT
+trap "rm -rf \"$STATS_DIR\"" EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
