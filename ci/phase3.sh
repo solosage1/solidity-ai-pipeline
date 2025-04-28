@@ -210,9 +210,8 @@ for p in "${patch_files[@]}"; do
 
   # Capture and process patch stats
   patch_stats="$(git apply --numstat "$p")"          || { echo "❌ git apply --numstat failed"; exit 1; }
-  printf '%s\n' "$patch_stats" > "$STATS_FILE"
-
-  # Parse insertions / deletions from cached stats
+  
+  # Parse insertions / deletions directly from patch_stats variable
   loc_ins=$(printf '%s\n' "$patch_stats" | awk '$1!="-" {ins+=$1} END{print ins+0}')
   loc_del=$(printf '%s\n' "$patch_stats" | awk '$2!="-" {del+=$2} END{print del+0}')
   total_loc=$((loc_ins + loc_del))
