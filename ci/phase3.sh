@@ -123,7 +123,7 @@ fi
 # ---------- run SWE-Agent -----------------------------------------------------
 
 TS=$(date +%Y%m%dT%H%M%S)
-LOGFILE="run_${TS}.log"
+LOGFILE="${DEMO_DIR}/run_${TS}.log"
 PATCH_TAR="${DEMO_DIR}/patch.tar"
 
 # Run from inside the demo repo so that repo.path='.' is correct
@@ -152,7 +152,7 @@ TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
 # shellcheck disable=SC2064
-trap "rm -rf '$STATS_DIR'" EXIT
+trap 'rm -rf "$STATS_DIR"' EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
@@ -182,7 +182,7 @@ done
 {
   echo "### Phase 3 Summary"
   echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
-  cost=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*\$([0-9.]+).*/\1/' || true)
+  cost=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*\$(.*)/\1/' || true)
   [ -n "$cost" ] && echo "- Estimated Cost: $cost"
 } >> "$GITHUB_STEP_SUMMARY"
 
