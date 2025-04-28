@@ -148,7 +148,7 @@ fi
 TOTAL_LOC_INS=0 TOTAL_LOC_DEL=0
 STATS_DIR=".patch_stats"
 mkdir -p "$STATS_DIR"
-trap "rm -rf \"$STATS_DIR\"" EXIT
+trap 'rm -rf "$STATS_DIR"' EXIT
 
 for p in "${patch_files[@]}"; do
   echo "--- Validating patch: $p ---"
@@ -180,7 +180,7 @@ done
   echo "- **LOC Changed:** +$TOTAL_LOC_INS / -$TOTAL_LOC_DEL"
   cost=$(grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" | sed -E 's/.*\$([0-9.]+).*/\1/' || true)
   [[ -n $cost ]] && echo "- Estimated Cost: $$cost"
-} >>"$GITHUB_STEP_SUMMARY"
+} >> "$GITHUB_STEP_SUMMARY"
 
 forge test -q || { echo "❌ tests still failing"; git diff; exit 1; }
 echo "✓ tests green after patch"

@@ -12,6 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Lint shell scripts with ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        env:
+          SHELLCHECK_OPTS: -Se  # Only fail on ERRORs, allow WARNING/NOTE to pass
+      
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
