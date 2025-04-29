@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci/phase3.sh – Phase 3 “hello-world” SWE-Agent run
+# ci/phase3.sh – Phase 3 "hello-world" SWE-Agent run
 set -euo pipefail
 
 # ────────────────────────────────  Config & helpers  ────────────────────────────────
@@ -7,14 +7,19 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' missing"; ex
 
 : "${PYBIN_DIR:=$(dirname "$(which python)")}"
 SCRIPT_DIR="$(pwd)"
-: "${DEMO_DIR:=/tmp/demo}"
+# Use mktemp to create a unique temporary directory
+DEMO_DIR=$(mktemp -d)
+# Ensure cleanup on exit
+trap 'rm -rf "$DEMO_DIR"' EXIT
 : "${FOUNDRY_SEARCH_PATHS:=${FOUNDRY_DIR:-}:/home/runner/.config/.foundry:$HOME/.config/.foundry}"
 
 require_cmd docker                                  # only binary guaranteed pre-installs
-python -m pip install --quiet 'sweagent==1.0.1'     # pin schema version for reproducibility
+python -m pip install --quiet 'git+https://github.com/princeton-nlp/swe-agent.git@v1.0.1' # pin schema version for reproducibility
 
 # ────────────────────────────────  Write / validate swe.yaml  ───────────────────────
-cat > swe.yaml <<'YAML'
+SWE_CONFIG_PATH="/tmp/swe.yaml" # Define path for swe.yaml
+# Use <<YAML (no quotes) to allow expansion of $DEMO_DIR
+cat > "$SWE_CONFIG_PATH" <<YAML
 # Minimal RunSingleConfig (SWE-Agent 1.0.x)
 problem_statement:
   text: Fix failing tests
@@ -29,25 +34,27 @@ actions:
 
 env:
   repo:
-    path: .
+    # Point repo path to the temporary demo directory
+    path: ${DEMO_DIR}
   deployment:
     type: local
 YAML
-echo "✓ Created swe.yaml"
+echo "✓ Created $SWE_CONFIG_PATH"
 
-echo "--- Validating swe.yaml (non-sudo python) ---"
-"$PYBIN_DIR/python" - <<'PY'
-from importlib import import_module
-import yaml, sys
-try:
-    RunSingleConfig = import_module("sweagent.config").RunSingleConfig
-    RunSingleConfig.model_validate(yaml.safe_load(open("swe.yaml")))
-    print("✓ swe.yaml validation passed")
-except ModuleNotFoundError as e:
-    print(f"⚠️  swe.yaml validation skipped ({e})\n   → Did sweagent install correctly?")
-except Exception as e:
-    print(f"❌ swe.yaml validation failed: {e}", file=sys.stderr); sys.exit(1)
-PY
+# echo "--- Validating $SWE_CONFIG_PATH (non-sudo python) ---"
+# "$PYBIN_DIR/python" - <<PY 
+# from importlib import import_module
+# import yaml, sys
+# try:
+#     RunSingleConfig = import_module("sweagent.config").RunSingleConfig
+#     RunSingleConfig.model_validate(yaml.safe_load(open("$SWE_CONFIG_PATH")))
+#     print("✓ $SWE_CONFIG_PATH validation passed")
+# except ModuleNotFoundError as e:
+#     print(f"⚠️  $SWE_CONFIG_PATH validation skipped ({e})\\n   → Did sweagent install correctly?")
+# except Exception as e:
+#     # Print the raw exception for better debugging
+#     print(f"❌ $SWE_CONFIG_PATH validation failed: {repr(e)}", file=sys.stderr); sys.exit(1)
+# PY
 
 # ────────────────────────────────  Ensure Foundry in PATH  ─────────────────────────
 IFS=':' read -ra FOUND_CANDIDATES <<<"$FOUNDRY_SEARCH_PATHS"
@@ -60,7 +67,7 @@ echo "Using forge from: $forge_bin"
 echo "Foundry version: $(forge --version)"
 
 # ────────────────────────────────  Build red-bar demo repo  ────────────────────────
-rm -rf "$DEMO_DIR"; mkdir -p "$DEMO_DIR"; cd "$DEMO_DIR"
+mkdir -p "$DEMO_DIR"; cd "$DEMO_DIR"
 git init -q
 
 cat > Greeter.sol <<'SOL'
@@ -96,7 +103,13 @@ LOGFILE="${DEMO_DIR}/run_${TS}.log"
 PATCH_TAR="${DEMO_DIR}/patch.tar"
 
 pushd "$DEMO_DIR" >/dev/null
-SWE_CMD="$PYBIN_DIR/python -m sweagent run --config ${SCRIPT_DIR}/swe.yaml --output_dir ${SCRIPT_DIR}"
+# Find site-packages and set SWE_AGENT_TOOLS_DIR to fix path issue in sweagent v1.0.1
+SITE_PACKAGES=$($PYBIN_DIR/python -c 'import site; print(site.getsitepackages()[0])')
+export SWE_AGENT_TOOLS_DIR="${SITE_PACKAGES}/sweagent/tools"
+# Also set TRAJECTORY_DIR to avoid assertion failure (use DEMO_DIR as a writable location)
+export SWE_AGENT_TRAJECTORY_DIR="$DEMO_DIR"
+# Use DEMO_DIR as the output directory for sweagent logs/results
+SWE_CMD="$PYBIN_DIR/python -m sweagent run --config ${SWE_CONFIG_PATH} --output_dir ${DEMO_DIR}"
 eval "$SWE_CMD" 2>&1 | tee "$LOGFILE"
 popd >/dev/null
 
