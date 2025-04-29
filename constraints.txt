@@ -1,6 +1,6 @@
-openai>=1.68.2
+openai==1.68.2
 swe-rex==1.2.1
 git+https://github.com/swe-agent/swe-agent@v1.0.1
-pytest<9
-pytest-cov
-pip-tools~=7.4 
+pytest==8.2.0
+pytest-cov==4.1.0
+pip-tools==7.4.1 
