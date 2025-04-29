@@ -7,61 +7,24 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Lint shell scripts with ShellCheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        env:
-          SHELLCHECK_OPTS: "-S error"  # Only fail on errors, allow warnings and notes to pass
-        with:
-          severity: error  # Explicitly set severity level
-          check_together: true  # Check all files together to use common config
-          scandir: './ci'  # Directory to scan
-      
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-${{ hashFiles('**/constraints.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+      - name: Install Docker
+        run: sudo apt-get update && sudo apt-get install -y docker.io
 
-      - name: Install pip-tools
+      - name: Install Foundry
         run: |
-          python -m pip install --upgrade pip
-          pip install --quiet 'pip-tools==7.4.1' # Pinned version
+          curl -L https://foundry.paradigm.xyz | bash
+          export PATH="$PATH:$HOME/.foundry/bin"
+          foundryup
 
-      - name: Verify Lockfile Consistency
-        run: bash .github/scripts/verify-lockfile.sh
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build package
-        run: |
-          python -m pip install --upgrade pip build
-          python -m build
-      
-      - name: Test installation
-        run: |
-          python -m pip install pipx
-          # Find the wheel file more robustly using find
-          wheel_file=$(find dist -maxdepth 1 -name 'solai-*.whl' -print -quit)
-          if [[ -z "$wheel_file" ]]; then
-            echo "::error::Wheel file not found in dist/ directory after build."
-            exit 1
-          fi
-          echo "Found wheel file: $wheel_file"
-          pipx install "$wheel_file"
-          solai doctor 
+      - name: Bootstrap & Run CI Locally
+        run: make ci 

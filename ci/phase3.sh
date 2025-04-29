@@ -13,7 +13,13 @@ DEMO_DIR=$(mktemp -d)
 trap 'rm -rf "$DEMO_DIR"' EXIT
 : "${FOUNDRY_SEARCH_PATHS:=${FOUNDRY_DIR:-}:/home/runner/.config/.foundry:$HOME/.config/.foundry}"
 
-require_cmd docker                                  # only binary guaranteed pre-installs
+# Check Docker CLI and daemon
+require_cmd docker
+if ! docker info >/dev/null 2>&1; then
+    echo "❌ Docker daemon is not running"
+    exit 1
+fi
+
 python -m pip install --quiet 'git+https://github.com/princeton-nlp/swe-agent.git@v1.0.1' # pin schema version for reproducibility
 
 # ────────────────────────────────  Write / validate swe.yaml  ───────────────────────
@@ -163,12 +169,36 @@ echo "✓ tests green after patch"
 
 # ────────────────────────────────  Slither static-analysis  ──────────────────────
 SLITHER_IMG="ghcr.io/crytic/slither:latest-slim"
-docker pull --quiet "$SLITHER_IMG" || true
-echo "--- Running Slither ---"
-docker run --pull=never --rm -v "$PWD":/src "$SLITHER_IMG" \
-  slither /src --exclude-dependencies --disable-color > slither.txt || \
-  echo "Slither exited non-zero → continuing"
-echo "✓ Slither analysis complete"
+echo "🔍 Pulling Slither image (with retries)…"
+for i in {1..3}; do
+    if docker pull --quiet "$SLITHER_IMG"; then
+        echo "✅ Slither image pulled successfully"
+        break
+    elif [ $i -lt 3 ]; then
+        echo "⚠️ Pull attempt $i failed, retrying in 5 seconds…"
+        sleep 5
+    else
+        echo "⚠️ Using existing Slither image after failed pulls"
+    fi
+done
+
+echo "🔍 Running Slither analysis…"
+SLITHER_EXIT=0
+docker run --rm -v "$(pwd)":/src "$SLITHER_IMG" \
+  slither /src --exclude-dependencies --disable-color > slither.txt || SLITHER_EXIT=$?
+
+if [ $SLITHER_EXIT -ne 0 ]; then
+    echo "⚠️ Slither found potential issues (exit code: $SLITHER_EXIT)"
+    echo "### Slither Analysis Results" >> "$GITHUB_STEP_SUMMARY"
+    echo "```" >> "$GITHUB_STEP_SUMMARY"
+    # Limit output to last 200 lines to avoid GitHub summary overflow
+    tail -n 200 slither.txt >> "$GITHUB_STEP_SUMMARY"
+    echo "```" >> "$GITHUB_STEP_SUMMARY"
+    # Also show cost in console for raw logs
+    grep -E 'Estimated cost: \$[0-9.]+' "$LOGFILE" || true
+else
+    echo "✅ Slither analysis complete - no issues found"
+fi
 
 # ────────────────────────────────  Evidence bundle  ─────────────────────────────
 mkdir -p .evidence
